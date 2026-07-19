@@ -416,7 +416,7 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 				return fmt.Errorf("verifying People API (enable it at https://console.cloud.google.com if not already): %w", err)
 			}
 			d.View.Println("")
-			fmt.Fprintf(d.View.Out, "%s | %s | %s\n",
+			_, _ = fmt.Fprintf(d.View.Out, "%s | %s | %s\n",
 				oneLinerField(profile.ResourceName), oneLinerField(profile.DisplayName), oneLinerField(profile.PrimaryEmail))
 		}
 	}
@@ -588,7 +588,7 @@ func promptAndDeleteForReauth(d initDeps) error {
 func finishExisting(d initDeps, profile *people.Profile) error {
 	if profile != nil {
 		d.View.Println("")
-		fmt.Fprintf(d.View.Out, "%s | %s | %s\n",
+		_, _ = fmt.Fprintf(d.View.Out, "%s | %s | %s\n",
 			oneLinerField(profile.ResourceName), oneLinerField(profile.DisplayName), oneLinerField(profile.PrimaryEmail))
 	}
 	return nil

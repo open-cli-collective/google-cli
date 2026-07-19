@@ -3,25 +3,38 @@ version: "2"
 linters:
   enable:
     - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - misspell
-    - revive
-    - gosec
     - errorlint
     - exhaustive
+    - govet
+    - gosec
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
   settings:
-    revive:
-      # Explicit rule list so behavior is stable across golangci-lint versions.
-      rules:
-        - name: unused-parameter
+    errcheck:
+      exclude-functions:
+        - io.Closer.Close
+        - (*net/http.Response).Body.Close
+        - (net/http.ResponseWriter).Write
   exclusions:
     rules:
       - path: _test\.go
         linters:
           - errcheck
+          - gosec
+      - linters:
+          - errcheck
+        source: "defer.*\\.Close\\(\\)"
+      # Stuttering names (e.g., mail.MailClient) are accepted for clarity at call sites
+      - linters:
+          - revive
+        text: "stutters"
+      # Standard library package name conflicts are intentional (e.g., calendar, contacts)
+      - linters:
+          - revive
+        text: "avoid package names that conflict"
 
 formatters:
   enable:
@@ -30,7 +43,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/open-cli-collective/cli-common
+        - github.com/open-cli-collective/google-cli-common
 
 run:
   timeout: 5m

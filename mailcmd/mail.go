@@ -1,4 +1,4 @@
-// Package mail implements the mail command and subcommands.
+// Package mailcmd implements the mail command and subcommands.
 package mailcmd
 
 import (

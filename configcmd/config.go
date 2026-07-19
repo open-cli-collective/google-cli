@@ -1,4 +1,4 @@
-// Package config implements the config command and subcommands.
+// Package configcmd implements the config command and subcommands.
 package configcmd
 
 import (
