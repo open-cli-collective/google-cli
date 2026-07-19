@@ -14,7 +14,7 @@ func TestNewCommandComposition(t *testing.T) {
 	}
 
 	// grw's read-write additions
-	for _, want := range []string{"delete", "folder", "filter"} {
+	for _, want := range []string{"delete", "restore", "folder", "filter"} {
 		if !names[want] {
 			t.Errorf("grw mail is missing the %q command", want)
 		}

@@ -10,6 +10,7 @@ deliberately cannot perform.
 | Command | What it does |
 | --- | --- |
 | `grw mail delete` | Move messages to Trash (default). `--permanent` erases them irreversibly, behind a typed confirmation and the broad `mail.google.com` scope. |
+| `grw mail restore` | Move messages back out of Trash (undo a plain `delete`). |
 | `grw mail folder create/rename/rm` | Manage labels as folders. `"Receipts/2026"` nests a subfolder. |
 | `grw mail filter list/create/rm` | Manage Gmail filters — match on `--from/--to/--subject/--query/--has-attachment`, act with `--add-label/--archive/--mark-read/--star/--trash`. |
 

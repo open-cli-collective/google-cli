@@ -14,6 +14,7 @@ import (
 func NewCommand() *cobra.Command {
 	cmd := mailcmd.NewCommand()
 	cmd.AddCommand(newDeleteCommand())
+	cmd.AddCommand(newRestoreCommand())
 	cmd.AddCommand(newFolderCommand())
 	cmd.AddCommand(newFilterCommand())
 	return cmd
