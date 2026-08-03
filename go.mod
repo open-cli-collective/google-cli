@@ -3,7 +3,7 @@ module github.com/open-cli-collective/google-readwrite
 go 1.26.4
 
 require (
-	github.com/open-cli-collective/google-cli-common v0.1.1
+	github.com/open-cli-collective/google-cli-common v0.1.2
 	github.com/spf13/cobra v1.10.2
 	google.golang.org/api v0.289.0
 )
