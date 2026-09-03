@@ -60,6 +60,7 @@ gro mail list
 gro calendar today
 
 grw init
+grw mail send <draft-id> --dry-run
 grw mail delete --query "older_than:1y" --dry-run
 grw calendar create --summary "Planning" --start 2026-10-01 --dry-run
 grw contacts create --given-name Test --email t@example.com --dry-run

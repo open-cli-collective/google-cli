@@ -1,8 +1,8 @@
 // Package mail is grw's Gmail command surface. It composes the non-destructive
 // leaves from internal/cmd/mail (search, read, thread,
 // archive, label, move/categorize, star, mark read/unread, attachments, draft)
-// and adds grw's read-WRITE leaves: delete (trash by default, permanent behind
-// a guard), folder (label lifecycle), and filter management.
+// and adds grw's read-WRITE leaves: send, delete (trash by default, permanent
+// behind a guard), folder (label lifecycle), and filter management.
 package mail
 
 import (
@@ -10,6 +10,7 @@ import (
 
 	gmailv1 "google.golang.org/api/gmail/v1"
 
+	gmailapi "github.com/open-cli-collective/google-cli/internal/api/gmail"
 	mailcmd "github.com/open-cli-collective/google-cli/internal/cmd/mail"
 	gmailrw "github.com/open-cli-collective/google-cli/internal/rw/gmail"
 )
@@ -19,6 +20,8 @@ import (
 // client, so the message-search and label-resolution reads come for free).
 type WriteClient interface {
 	mailcmd.MailClient
+	GetDraft(ctx context.Context, draftID string) (*gmailapi.DraftSummary, error)
+	SendDraft(ctx context.Context, draftID string) (*gmailapi.SentResult, error)
 
 	TrashMessages(ctx context.Context, ids []string) error
 	UntrashMessages(ctx context.Context, ids []string) error

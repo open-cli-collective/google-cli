@@ -5,6 +5,7 @@ import (
 
 	gmailv1 "google.golang.org/api/gmail/v1"
 
+	gmailapi "github.com/open-cli-collective/google-cli/internal/api/gmail"
 	mailcmd "github.com/open-cli-collective/google-cli/internal/cmd/mail"
 )
 
@@ -12,6 +13,8 @@ import (
 // zero values, so each test wires only the methods it exercises.
 type mockWriteClient struct {
 	mailcmd.MailClient
+	GetDraftFunc                  func(ctx context.Context, draftID string) (*gmailapi.DraftSummary, error)
+	SendDraftFunc                 func(ctx context.Context, draftID string) (*gmailapi.SentResult, error)
 	SearchMessageIDsFunc          func(ctx context.Context, query string, maxResults int64) ([]string, error)
 	FetchLabelsFunc               func(ctx context.Context) error
 	GetLabelsFunc                 func() []*gmailv1.Label
@@ -28,6 +31,20 @@ type mockWriteClient struct {
 }
 
 var _ WriteClient = (*mockWriteClient)(nil)
+
+func (m *mockWriteClient) GetDraft(ctx context.Context, draftID string) (*gmailapi.DraftSummary, error) {
+	if m.GetDraftFunc != nil {
+		return m.GetDraftFunc(ctx, draftID)
+	}
+	return &gmailapi.DraftSummary{}, nil
+}
+
+func (m *mockWriteClient) SendDraft(ctx context.Context, draftID string) (*gmailapi.SentResult, error) {
+	if m.SendDraftFunc != nil {
+		return m.SendDraftFunc(ctx, draftID)
+	}
+	return &gmailapi.SentResult{}, nil
+}
 
 func (m *mockWriteClient) SearchMessageIDs(ctx context.Context, query string, maxResults int64) ([]string, error) {
 	if m.SearchMessageIDsFunc != nil {
