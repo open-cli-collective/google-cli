@@ -56,7 +56,7 @@ func newFilterListCommand() *cobra.Command {
 
 func newFilterCreateCommand() *cobra.Command {
 	var from, to, subject, query string
-	var hasAttachment bool
+	var hasAttachment, dryRun bool
 	var addLabel string
 	var archive, markRead, star, trash bool
 
@@ -72,10 +72,13 @@ Actions combine, e.g. --archive --mark-read --add-label Newsletters.`,
   grw mail filter create --subject "[CI]" --add-label CI --archive`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx := cmd.Context()
-			client, err := newWriteClient(ctx)
-			if err != nil {
-				return fmt.Errorf("creating Gmail client: %w", err)
+			var client WriteClient
+			if !dryRun {
+				var err error
+				client, err = newWriteClient(cmd.Context())
+				if err != nil {
+					return fmt.Errorf("creating Gmail client: %w", err)
+				}
 			}
 
 			crit := &gmailv1.FilterCriteria{}
@@ -105,13 +108,6 @@ Actions combine, e.g. --archive --mark-read --add-label Newsletters.`,
 			}
 
 			action := &gmailv1.FilterAction{}
-			if addLabel != "" {
-				id, err := client.GetLabelID(ctx, addLabel)
-				if err != nil {
-					return fmt.Errorf("resolving --add-label %q (create it first with 'grw mail folder create'): %w", addLabel, err)
-				}
-				action.AddLabelIds = append(action.AddLabelIds, id)
-			}
 			if star {
 				action.AddLabelIds = append(action.AddLabelIds, "STARRED")
 			}
@@ -124,8 +120,21 @@ Actions combine, e.g. --archive --mark-read --add-label Newsletters.`,
 			if markRead {
 				action.RemoveLabelIds = append(action.RemoveLabelIds, "UNREAD")
 			}
-			if len(action.AddLabelIds) == 0 && len(action.RemoveLabelIds) == 0 {
+			if addLabel == "" && len(action.AddLabelIds) == 0 && len(action.RemoveLabelIds) == 0 {
 				return fmt.Errorf("at least one action is required (--add-label/--archive/--mark-read/--star/--trash)")
+			}
+			if dryRun {
+				fmt.Println("[dry-run] Would create filter.")
+				return nil
+			}
+
+			ctx := cmd.Context()
+			if addLabel != "" {
+				id, err := client.GetLabelID(ctx, addLabel)
+				if err != nil {
+					return fmt.Errorf("resolving --add-label %q (create it first with 'grw mail folder create'): %w", addLabel, err)
+				}
+				action.AddLabelIds = append(action.AddLabelIds, id)
 			}
 
 			created, err := client.CreateFilter(ctx, &gmailv1.Filter{Criteria: crit, Action: action})
@@ -147,16 +156,22 @@ Actions combine, e.g. --archive --mark-read --add-label Newsletters.`,
 	cmd.Flags().BoolVar(&markRead, "mark-read", false, "Mark as read")
 	cmd.Flags().BoolVar(&star, "star", false, "Star the message")
 	cmd.Flags().BoolVar(&trash, "trash", false, "Move to Trash")
+	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview without making changes")
 	return cmd
 }
 
 func newFilterRemoveCommand() *cobra.Command {
-	return &cobra.Command{
+	var dryRun bool
+	cmd := &cobra.Command{
 		Use:     "rm <filter-id>",
 		Aliases: []string{"delete", "remove"},
 		Short:   "Delete a filter by ID (from 'filter list')",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun {
+				fmt.Printf("[dry-run] Would delete filter %s.\n", args[0])
+				return nil
+			}
 			ctx := cmd.Context()
 			client, err := newWriteClient(ctx)
 			if err != nil {
@@ -169,6 +184,8 @@ func newFilterRemoveCommand() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview without making changes")
+	return cmd
 }
 
 func criteriaSummary(c *gmailv1.FilterCriteria) string {
