@@ -92,6 +92,9 @@ func mergeName(dst, src *people.Name) {
 	overlay(&dst.MiddleName, src.MiddleName)
 	overlay(&dst.HonorificPrefix, src.HonorificPrefix)
 	overlay(&dst.HonorificSuffix, src.HonorificSuffix)
+	// DisplayName is derived by Google from the structured parts and a stale
+	// PhoneticFullName would no longer match them; clear both so the server
+	// recomputes rather than keeping the pre-edit values.
 	dst.DisplayName, dst.PhoneticFullName = "", ""
 }
 

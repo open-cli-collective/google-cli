@@ -7,11 +7,6 @@ import (
 	"google.golang.org/api/people/v1"
 )
 
-var updatePersonFields = []string{
-	"names", "emailAddresses", "phoneNumbers", "organizations",
-	"addresses", "urls", "biographies", "birthdays",
-}
-
 // Contact represents a simplified contact for output
 type Contact struct {
 	ResourceName  string         `json:"resourceName"`
@@ -250,14 +245,23 @@ func PersonUpdateMask(c *Contact) string {
 	if c == nil {
 		return ""
 	}
-	present := []bool{
-		len(c.Names) > 0, len(c.Emails) > 0, len(c.Phones) > 0, len(c.Organizations) > 0,
-		len(c.Addresses) > 0, len(c.URLs) > 0, c.Biography != "", c.Birthday != "",
+	groups := []struct {
+		field   string
+		present bool
+	}{
+		{"names", len(c.Names) > 0},
+		{"emailAddresses", len(c.Emails) > 0},
+		{"phoneNumbers", len(c.Phones) > 0},
+		{"organizations", len(c.Organizations) > 0},
+		{"addresses", len(c.Addresses) > 0},
+		{"urls", len(c.URLs) > 0},
+		{"biographies", c.Biography != ""},
+		{"birthdays", c.Birthday != ""},
 	}
-	fields := make([]string, 0, len(updatePersonFields))
-	for i, field := range updatePersonFields {
-		if present[i] {
-			fields = append(fields, field)
+	fields := make([]string, 0, len(groups))
+	for _, group := range groups {
+		if group.present {
+			fields = append(fields, group.field)
 		}
 	}
 	return strings.Join(fields, ",")

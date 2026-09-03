@@ -13,6 +13,8 @@ Both tools use the same configuration and keyring machinery, but register separa
 
 `grw mail delete` moves messages to Trash by default. Permanent deletion requires both `--permanent` and `--yes`. Every added write leaf other than read verbs supports `--dry-run` (`-n`).
 
+`grw contacts delete` and `grw contacts group rm` ask for a typed confirmation unless `--yes` is given. Deleting a group never deletes its member contacts, and system groups such as `myContacts` and `starred` are refused.
+
 ## Install
 
 ### Homebrew

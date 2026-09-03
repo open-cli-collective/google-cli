@@ -82,8 +82,7 @@ func (f contactFlags) contact(cmd *cobra.Command, changedOnly bool) (*contactsap
 		}
 		return false
 	}
-	if changed("given-name", "family-name", "middle-name", "prefix", "suffix") &&
-		(f.givenName != "" || f.familyName != "" || f.middleName != "" || f.prefix != "" || f.suffix != "") {
+	if f.hasNameInput(changed) {
 		c.Names = []contactsapi.Name{{GivenName: f.givenName, FamilyName: f.familyName, MiddleName: f.middleName, HonorificPrefix: f.prefix, HonorificSuffix: f.suffix}}
 	}
 	if changed("email") {
@@ -98,7 +97,7 @@ func (f contactFlags) contact(cmd *cobra.Command, changedOnly bool) (*contactsap
 			c.Phones = append(c.Phones, contactsapi.Phone{Value: value, Type: typ})
 		}
 	}
-	if changed("org", "title", "department") && (f.organization != "" || f.title != "" || f.department != "") {
+	if f.hasOrganizationInput(changed) {
 		c.Organizations = []contactsapi.Organization{{Name: f.organization, Title: f.title, Department: f.department}}
 	}
 	if changed("address") {
@@ -121,6 +120,19 @@ func (f contactFlags) contact(cmd *cobra.Command, changedOnly bool) (*contactsap
 		c.Birthday = f.birthday
 	}
 	return c, nil
+}
+
+// hasNameInput reports whether any name flag was set (per changed) to a
+// non-empty value, so an empty names group is never sent.
+func (f contactFlags) hasNameInput(changed func(...string) bool) bool {
+	return changed("given-name", "family-name", "middle-name", "prefix", "suffix") &&
+		(f.givenName != "" || f.familyName != "" || f.middleName != "" || f.prefix != "" || f.suffix != "")
+}
+
+// hasOrganizationInput is the organization counterpart of hasNameInput.
+func (f contactFlags) hasOrganizationInput(changed func(...string) bool) bool {
+	return changed("org", "title", "department") &&
+		(f.organization != "" || f.title != "" || f.department != "")
 }
 
 func splitType(value string) (string, string) {

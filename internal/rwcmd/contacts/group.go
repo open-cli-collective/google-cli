@@ -108,6 +108,10 @@ func resolveGroup(cmd *cobra.Command, client WriteClient, name string) (string, 
 	return resourceName, nil
 }
 
+// isSystemGroup reports whether a resource name refers to one of the People
+// API's built-in groups. User-created groups get numeric ids
+// (contactGroups/12345); system groups use keyword ids such as
+// contactGroups/myContacts and contactGroups/starred.
 func isSystemGroup(resourceName string) bool {
 	id, ok := strings.CutPrefix(resourceName, "contactGroups/")
 	if !ok {
