@@ -72,11 +72,11 @@ Each tag publishes both binaries and their platform archives through the shared 
 `packaging/identity.yml` (schema `open-cli-identity/v1`, described in the cli-common
 [distribution](https://github.com/open-cli-collective/cli-common/blob/main/docs/distribution.md)
 standard) declares both binaries once so the shared automation can validate, build, sign, and
-publish them without per-repo workflow logic. Naming follows one rule: `gro` keeps every identifier
-it shipped under before the merge (`google-readonly` on Chocolatey, WinGet, Linux, and as a tap
-alias) because package registries cannot rename an existing package without breaking upgrades;
-`grw` is new, so it is canonical under its short name and only carries `google-readwrite` as a tap
-alias. Each binary's `keychain_probe` runs the freshly built macOS binary against a seeded config
+publish them without per-repo workflow logic. Naming follows one rule: package registries use the long
+names (`google-readonly` and `google-readwrite` on Chocolatey, WinGet, and Linux), while the
+Homebrew casks are named after the binaries (`gro`, `grw`) with the long names as aliases. `gro`'s
+identifiers predate the merge and cannot change without breaking upgrades; `grw` simply follows
+the same pattern. Each binary's `keychain_probe` runs the freshly built macOS binary against a seeded config
 and asserts it selects the Keychain backend, which catches a static or mis-tagged build before it
 is published.
 

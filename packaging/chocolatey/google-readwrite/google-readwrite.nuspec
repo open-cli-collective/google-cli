@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
-    <id>grw</id>
+    <id>google-readwrite</id>
     <version>0.0.0</version>
     <title>Google Read-Write CLI</title>
     <authors>Open CLI Collective</authors>
@@ -9,7 +9,7 @@
     <licenseUrl>https://github.com/open-cli-collective/google-cli/blob/main/LICENSE</licenseUrl>
     <projectUrl>https://github.com/open-cli-collective/google-cli#readme</projectUrl>
     <projectSourceUrl>https://github.com/open-cli-collective/google-cli</projectSourceUrl>
-    <packageSourceUrl>https://github.com/open-cli-collective/google-cli/tree/main/packaging/chocolatey/grw</packageSourceUrl>
+    <packageSourceUrl>https://github.com/open-cli-collective/google-cli/tree/main/packaging/chocolatey/google-readwrite</packageSourceUrl>
     <bugTrackerUrl>https://github.com/open-cli-collective/google-cli/issues</bugTrackerUrl>
     <copyright>Copyright (c) 2026 Open CLI Collective</copyright>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
