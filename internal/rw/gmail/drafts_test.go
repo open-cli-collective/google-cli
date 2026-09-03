@@ -30,8 +30,8 @@ func TestGetDraft(t *testing.T) {
 		if r.Method != http.MethodGet || r.URL.Path != "/gmail/v1/users/me/drafts/draft-1" {
 			t.Errorf("request = %s %s", r.Method, r.URL.Path)
 		}
-		if got := r.URL.Query().Get("format"); got != "metadata" {
-			t.Errorf("format = %q, want metadata", got)
+		if got := r.URL.Query().Get("format"); got != "full" {
+			t.Errorf("format = %q, want full", got)
 		}
 		_, _ = fmt.Fprint(w, `{
   "id":"draft-1",
@@ -48,6 +48,7 @@ func TestGetDraft(t *testing.T) {
       ],
       "parts":[
         {"filename":"report.pdf"},
+        {"filename":"logo.png","headers":[{"name":"Content-Disposition","value":"inline; filename=logo.png"}]},
         {"parts":[{"headers":[{"name":"Content-Disposition","value":"attachment; filename=notes.txt"}]}]}
       ]
     }
@@ -63,6 +64,25 @@ func TestGetDraft(t *testing.T) {
 		got.From != "sender@example.com" || got.To != "to@example.com" || got.Cc != "cc@example.com" ||
 		got.Bcc != "bcc@example.com" || got.Subject != "Hello" || got.AttachmentCount != 2 {
 		t.Errorf("GetDraft() = %+v", got)
+	}
+}
+
+func TestGetDraftWithoutMessageOrPayload(t *testing.T) {
+	t.Parallel()
+	for name, body := range map[string]string{
+		"no message": `{"id":"draft-1"}`,
+		"no payload": `{"id":"draft-1","message":{"id":"message-1","threadId":"thread-1"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := testDraftClient(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprint(w, body) })
+			got, err := client.GetDraft(context.Background(), "draft-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.ID != "draft-1" || got.To != "" || got.AttachmentCount != 0 {
+				t.Errorf("GetDraft() = %+v", got)
+			}
+		})
 	}
 }
 

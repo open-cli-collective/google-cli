@@ -17,7 +17,9 @@ func newSendCommand() *cobra.Command {
 		Long: `Preview and send an existing Gmail draft by its ID.
 
 The draft is fetched and its headers are displayed before sending. Dry-run also
-constructs a Gmail client because fetching the draft is required for preview.`,
+constructs a Gmail client because fetching the draft is required for preview.
+Gmail sends whatever the draft contains at send time; if the draft is edited
+elsewhere between the preview and the send, the edited version goes out.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := newWriteClient(cmd.Context())
@@ -29,11 +31,11 @@ constructs a Gmail client because fetching the draft is required for preview.`,
 				return fmt.Errorf("getting draft: %w", err)
 			}
 			printDraftSummary(draft)
-			if dryRun {
-				return nil
-			}
 			if draft.To == "" && draft.Cc == "" && draft.Bcc == "" {
 				return fmt.Errorf("draft has no recipients")
+			}
+			if dryRun {
+				return nil
 			}
 			sent, err := client.SendDraft(cmd.Context(), args[0])
 			if err != nil {

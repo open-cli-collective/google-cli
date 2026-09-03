@@ -10,9 +10,11 @@ import (
 	gmailapi "github.com/open-cli-collective/google-cli/internal/api/gmail"
 )
 
-// GetDraft returns the metadata needed to preview a draft before sending it.
+// GetDraft returns the headers and attachment count needed to preview a draft
+// before sending it. It asks for the full format because the metadata format
+// omits payload parts, which would hide every attachment from the preview.
 func (c *Client) GetDraft(ctx context.Context, draftID string) (*gmailapi.DraftSummary, error) {
-	draft, err := c.service.Users.Drafts.Get(c.userID, draftID).Format("metadata").Context(ctx).Do()
+	draft, err := c.service.Users.Drafts.Get(c.userID, draftID).Format("full").Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("getting draft: %w", err)
 	}
@@ -53,20 +55,32 @@ func (c *Client) SendDraft(ctx context.Context, draftID string) (*gmailapi.SentR
 	return &gmailapi.SentResult{ID: message.Id, ThreadID: message.ThreadId, LabelIDs: message.LabelIds}, nil
 }
 
+// countAttachments counts the parts a recipient would see as attachments: any
+// part whose Content-Disposition is "attachment", plus named parts without a
+// disposition. Named parts marked "inline" (embedded images, signatures) are
+// not counted.
 func countAttachments(part *gmailv1.MessagePart) int {
 	count := 0
-	if part.Filename != "" {
+	switch disposition(part) {
+	case "attachment":
 		count++
-	} else {
-		for _, header := range part.Headers {
-			if strings.EqualFold(header.Name, "content-disposition") && strings.HasPrefix(strings.ToLower(header.Value), "attachment") {
-				count++
-				break
-			}
+	case "":
+		if part.Filename != "" {
+			count++
 		}
 	}
 	for _, child := range part.Parts {
 		count += countAttachments(child)
 	}
 	return count
+}
+
+func disposition(part *gmailv1.MessagePart) string {
+	for _, header := range part.Headers {
+		if strings.EqualFold(header.Name, "content-disposition") {
+			value, _, _ := strings.Cut(header.Value, ";")
+			return strings.ToLower(strings.TrimSpace(value))
+		}
+	}
+	return ""
 }

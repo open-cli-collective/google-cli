@@ -64,6 +64,46 @@ func TestSend_DryRunDoesNotSend(t *testing.T) {
 	})
 }
 
+func TestSend_BccOnlyRecipientSends(t *testing.T) {
+	sent := false
+	mock := &mockWriteClient{
+		GetDraftFunc: func(context.Context, string) (*gmailapi.DraftSummary, error) {
+			return &gmailapi.DraftSummary{Bcc: "bcc@example.com", Subject: "Hello"}, nil
+		},
+		SendDraftFunc: func(context.Context, string) (*gmailapi.SentResult, error) {
+			sent = true
+			return &gmailapi.SentResult{ID: "message-1", ThreadID: "thread-1"}, nil
+		},
+	}
+	withMockClient(mock, func() {
+		testutil.CaptureStdout(t, func() {
+			_, err := runCmd(newSendCommand(), "draft-1")
+			testutil.NoError(t, err)
+		})
+	})
+	if !sent {
+		t.Fatal("a Bcc-only draft must send")
+	}
+}
+
+func TestSend_DryRunReportsMissingRecipients(t *testing.T) {
+	mock := &mockWriteClient{
+		GetDraftFunc: func(context.Context, string) (*gmailapi.DraftSummary, error) { return &gmailapi.DraftSummary{}, nil },
+		SendDraftFunc: func(context.Context, string) (*gmailapi.SentResult, error) {
+			t.Fatal("dry-run must not send")
+			return nil, nil
+		},
+	}
+	withMockClient(mock, func() {
+		testutil.CaptureStdout(t, func() {
+			_, err := runCmd(newSendCommand(), "draft-1", "--dry-run")
+			if err == nil || !strings.Contains(err.Error(), "no recipients") {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	})
+}
+
 func TestSend_MissingRecipients(t *testing.T) {
 	mock := &mockWriteClient{
 		GetDraftFunc: func(context.Context, string) (*gmailapi.DraftSummary, error) { return &gmailapi.DraftSummary{}, nil },
