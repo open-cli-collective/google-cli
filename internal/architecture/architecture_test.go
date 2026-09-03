@@ -73,7 +73,9 @@ func leafMap(cmd *cobra.Command) map[string]*cobra.Command {
 	return leaves
 }
 
-func addedWriteLeaves(t *testing.T, domain string) map[string]*cobra.Command {
+// assertReadSupersetAndAddedLeaves fails the test if the write command drops
+// any read leaf, then returns the leaves only the write command has.
+func assertReadSupersetAndAddedLeaves(t *testing.T, domain string) map[string]*cobra.Command {
 	t.Helper()
 	pair, ok := writeCommandPairs[domain]
 	if !ok {
@@ -225,13 +227,16 @@ func TestWriteCommandsExtendReadCommands(t *testing.T) {
 		domain := domain
 		t.Run(domain, func(t *testing.T) {
 			t.Parallel()
-			if added := addedWriteLeaves(t, domain); len(added) == 0 {
+			if added := assertReadSupersetAndAddedLeaves(t, domain); len(added) == 0 {
 				t.Error("write command must add at least one leaf")
 			}
 		})
 	}
 }
 
+// embedsSelector reports whether some exported type accepted by typeName embeds
+// a type from importPath. With selectedType set it must be that exact type;
+// with selectedType empty any exported type named *Client counts.
 func embedsSelector(files []*ast.File, typeName func(string) bool, importPath, selectedType string) bool {
 	for _, file := range files {
 		aliases := map[string]bool{}
@@ -279,8 +284,9 @@ func embedsSelector(files []*ast.File, typeName func(string) bool, importPath, s
 						continue
 					}
 					ident, identOK := sel.X.(*ast.Ident)
-					matchesType := selectedType == "" && sel.Sel.IsExported() && strings.HasSuffix(sel.Sel.Name, "Client") || sel.Sel.Name == selectedType
-					if identOK && aliases[ident.Name] && matchesType {
+					matchesExactType := selectedType != "" && sel.Sel.Name == selectedType
+					matchesClientConvention := selectedType == "" && sel.Sel.IsExported() && strings.HasSuffix(sel.Sel.Name, "Client")
+					if identOK && aliases[ident.Name] && (matchesExactType || matchesClientConvention) {
 						return true
 					}
 				}
@@ -324,7 +330,7 @@ func TestWriteLeavesHaveDryRun(t *testing.T) {
 	t.Parallel()
 	readVerbs := map[string]bool{"list": true, "get": true, "show": true, "search": true}
 	for _, domain := range packageDirs(t, "rwcmd") {
-		for path, cmd := range addedWriteLeaves(t, domain) {
+		for path, cmd := range assertReadSupersetAndAddedLeaves(t, domain) {
 			path, cmd := path, cmd
 			t.Run(path, func(t *testing.T) {
 				t.Parallel()
@@ -344,7 +350,7 @@ func TestWriteLeavesHaveDryRun(t *testing.T) {
 func TestPermanentWriteLeavesRequireYes(t *testing.T) {
 	t.Parallel()
 	for _, domain := range packageDirs(t, "rwcmd") {
-		for path, cmd := range addedWriteLeaves(t, domain) {
+		for path, cmd := range assertReadSupersetAndAddedLeaves(t, domain) {
 			path, cmd := path, cmd
 			t.Run(path, func(t *testing.T) {
 				t.Parallel()
@@ -368,7 +374,7 @@ func TestResourceLeavesHaveNoJSONFlag(t *testing.T) {
 			t.Run(leaf.path, func(t *testing.T) {
 				t.Parallel()
 				if leaf.cmd.Flags().Lookup("json") != nil {
-					t.Errorf("resource leaf %q must not declare --json", leaf.path)
+					t.Errorf("resource leaf %q must not declare --json (see docs/golden-principles.md and cli-common output-and-rendering §2)", leaf.path)
 				}
 			})
 		}
@@ -388,16 +394,19 @@ func TestResourceLeaf_RejectsJSON_EndToEnd(t *testing.T) {
 	}
 }
 
+// allowedScopes are the only OAuth scopes gro may request. The non-readonly
+// entries are included because they enable organizational operations (label,
+// archive, star, RSVP) without granting send or delete access.
 var allowedScopes = map[string]bool{
 	"https://www.googleapis.com/auth/gmail.readonly":    true,
-	"https://www.googleapis.com/auth/gmail.modify":      true,
+	"https://www.googleapis.com/auth/gmail.modify":      true, // label, archive, star, read/unread (NOT send/delete)
 	"https://www.googleapis.com/auth/calendar.readonly": true,
-	"https://www.googleapis.com/auth/calendar.events":   true,
+	"https://www.googleapis.com/auth/calendar.events":   true, // RSVP, color (NOT calendar settings)
 	"https://www.googleapis.com/auth/contacts.readonly": true,
-	"https://www.googleapis.com/auth/contacts":          true,
-	"https://www.googleapis.com/auth/userinfo.profile":  true,
+	"https://www.googleapis.com/auth/contacts":          true, // group membership, starring (NOT create/delete contacts)
+	"https://www.googleapis.com/auth/userinfo.profile":  true, // authenticated user's name/email for `me` (NOT contacts list)
 	"https://www.googleapis.com/auth/drive.readonly":    true,
-	"https://www.googleapis.com/auth/drive.metadata":    true,
+	"https://www.googleapis.com/auth/drive.metadata":    true, // star/unstar files (NOT file content write)
 }
 
 var knownGrwScopes = map[string]bool{
@@ -414,6 +423,10 @@ var knownGrwScopes = map[string]bool{
 	"https://mail.google.com/":                             true,
 }
 
+// TestAllScopesAreNonDestructive is the structural guarantee that keeps gro
+// non-destructive: the scope set it registers can never include
+// gmail.settings.* or https://mail.google.com/ (which would permit filters or
+// permanent deletion).
 func TestAllScopesAreNonDestructive(t *testing.T) {
 	t.Parallel()
 	scopes := groapp.Identity().Scopes
@@ -422,7 +435,7 @@ func TestAllScopesAreNonDestructive(t *testing.T) {
 	}
 	for _, scope := range scopes {
 		if !allowedScopes[scope] {
-			t.Errorf("scope %q is not in the non-destructive allowlist", scope)
+			t.Errorf("scope %q is not in the non-destructive allowlist; update allowedScopes if this scope is safe", scope)
 		}
 	}
 }
@@ -525,8 +538,17 @@ func TestGrwLinksWriteCode(t *testing.T) {
 	}
 }
 
+// forbiddenAPIPatterns are the Google API client method calls gro must never
+// make. They are specific to the Google client libraries and unlikely to
+// appear in other contexts; generic names like .Delete() or .Insert() are
+// intentionally excluded to avoid false positives. .BatchModify( is allowed
+// because it backs bulk label/archive operations.
 var forbiddenAPIPatterns = []string{".Send(", ".Trash(", ".Untrash(", ".BatchDelete("}
 
+// TestNoDestructiveAPIMethodsInProductionCode scans every in-module package
+// that gro links (including internal/api/*) for the forbidden calls. Scoping
+// the scan to gro's link graph is deliberate: internal/rw/* legitimately calls
+// these methods, and TestGroNeverLinksWriteCode proves gro cannot reach it.
 func TestNoDestructiveAPIMethodsInProductionCode(t *testing.T) {
 	t.Parallel()
 	root := repoRoot(t)
@@ -544,7 +566,7 @@ func TestNoDestructiveAPIMethodsInProductionCode(t *testing.T) {
 			for _, pattern := range forbiddenAPIPatterns {
 				if strings.Contains(string(data), pattern) {
 					rel, _ := filepath.Rel(root, path)
-					t.Errorf("%s contains forbidden destructive API method %q", rel, pattern)
+					t.Errorf("%s contains forbidden destructive API method %q; gro only allows non-destructive operations", rel, pattern)
 				}
 			}
 		}
