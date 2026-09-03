@@ -10,9 +10,12 @@ import (
 
 	config "github.com/open-cli-collective/google-cli/internal/cmd/config"
 	initcmd "github.com/open-cli-collective/google-cli/internal/cmd/init"
+	"github.com/open-cli-collective/google-cli/internal/cmd/me"
+	profilescmd "github.com/open-cli-collective/google-cli/internal/cmd/profiles"
 	refreshcmd "github.com/open-cli-collective/google-cli/internal/cmd/refresh"
 	"github.com/open-cli-collective/google-cli/internal/cmd/setcred"
 	"github.com/open-cli-collective/google-cli/internal/rootutil"
+	rwcalendar "github.com/open-cli-collective/google-cli/internal/rwcmd/calendar"
 	"github.com/open-cli-collective/google-cli/internal/rwcmd/mail"
 	"github.com/open-cli-collective/google-cli/internal/version"
 )
@@ -24,13 +27,14 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "grw",
-	Short: "A read-write CLI for Gmail cleanup and organization",
-	Long: `grw is a read-write command-line interface for Gmail.
+	Short: "A read-write CLI for Google services",
+	Long: `grw is a read-write command-line interface for Google services.
 
 It reads and organizes mail like its read-only sibling gro, and adds the
 operations gro deliberately cannot perform: deleting messages (Trash by
 default, permanent behind a guard), managing labels as folders/subfolders, and
-creating Gmail filters.
+creating Gmail filters. It also reads profile information and creates, updates,
+and deletes Google Calendar events.
 
 grw stores its credentials separately from gro (keyring namespace
 "google-readwrite"), so the two can be used in isolation — e.g. give an agent
@@ -68,7 +72,10 @@ func init() {
 	// Register commands
 	rootCmd.AddCommand(initcmd.NewCommand())
 	rootCmd.AddCommand(config.NewCommand())
+	rootCmd.AddCommand(profilescmd.NewCommand())
 	rootCmd.AddCommand(setcred.NewCmd())
+	rootCmd.AddCommand(me.NewCommand())
 	rootCmd.AddCommand(mail.NewCommand())
+	rootCmd.AddCommand(rwcalendar.NewCommand())
 	rootCmd.AddCommand(refreshcmd.NewCommand())
 }

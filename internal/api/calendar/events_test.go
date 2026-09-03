@@ -1,11 +1,41 @@
 package calendar
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
 	"google.golang.org/api/calendar/v3"
 )
+
+func TestToAPIEventRoundTrip(t *testing.T) {
+	t.Parallel()
+	tests := map[string]*Event{
+		"timed": {
+			ID: "timed", Summary: "Meeting", Description: "Discuss work", Location: "Room 1", Status: "confirmed",
+			Start: &EventTime{DateTime: "2026-10-01T09:00:00-04:00", TimeZone: "America/New_York"},
+			End:   &EventTime{DateTime: "2026-10-01T10:00:00-04:00", TimeZone: "America/New_York"},
+		},
+		"all-day": {
+			ID: "all-day", Summary: "Holiday", Status: "confirmed", AllDay: true,
+			Start: &EventTime{Date: "2026-10-01"}, End: &EventTime{Date: "2026-10-02"},
+		},
+		"attendees": {
+			ID: "attendees", Summary: "Review", Status: "tentative",
+			Start: &EventTime{DateTime: "2026-10-01T14:00:00Z"}, End: &EventTime{DateTime: "2026-10-01T15:00:00Z"},
+			Attendees: []Person{{Email: "required@example.com", Status: "accepted"}, {Email: "optional@example.com", Optional: true, Status: "tentative"}},
+		},
+	}
+	for name, event := range tests {
+		event := event
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := ParseEvent(ToAPIEvent(event)); !reflect.DeepEqual(got, event) {
+				t.Fatalf("round trip = %#v, want %#v", got, event)
+			}
+		})
+	}
+}
 
 func TestParseEvent(t *testing.T) {
 	t.Parallel()

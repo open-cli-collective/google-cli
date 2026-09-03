@@ -16,6 +16,9 @@ type Client struct {
 	service *calendar.Service
 }
 
+// Service returns the underlying Calendar API service for write wrappers.
+func (c *Client) Service() *calendar.Service { return c.service }
+
 // NewClient creates a new Calendar client with OAuth2 authentication
 func NewClient(ctx context.Context) (*Client, error) {
 	client, err := auth.GetHTTPClient(ctx)

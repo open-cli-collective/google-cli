@@ -11,12 +11,14 @@
 package grw
 
 import (
+	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/gmail/v1"
+	"google.golang.org/api/people/v1"
 
 	"github.com/open-cli-collective/google-cli/internal/config"
 )
 
-// Scopes is the OAuth scope set grw requests (Gmail only in v1):
+// Scopes is the OAuth scope set grw requests:
 //   - gmail.modify: read + non-destructive organization (label, archive, move,
 //     trash-via-label) and label lifecycle (create/rename/delete folders).
 //   - gmail.settings.basic: create, list, and delete Gmail filters.
@@ -27,14 +29,20 @@ var Scopes = []string{
 	gmail.GmailModifyScope,
 	gmail.GmailSettingsBasicScope,
 	gmail.MailGoogleComScope,
+	calendar.CalendarReadonlyScope,
+	calendar.CalendarEventsScope,
+	people.UserinfoProfileScope,
 }
 
 // ScopeDescriptions maps each requested scope URL to a human-friendly
 // description, shown by the init wizard and the scope-drift re-auth prompt.
 var ScopeDescriptions = map[string]string{
-	gmail.GmailModifyScope:        "Gmail Modify — read messages, plus label, archive, move, trash, and create/rename/delete labels (folders).",
-	gmail.GmailSettingsBasicScope: "Gmail Settings (basic) — create, list, and delete filters.",
-	gmail.MailGoogleComScope:      "Gmail Full Access — required for permanent deletion (gated behind --permanent and a typed confirmation).",
+	gmail.GmailModifyScope:         "Gmail Modify — read messages, plus label, archive, move, trash, and create/rename/delete labels (folders).",
+	gmail.GmailSettingsBasicScope:  "Gmail Settings (basic) — create, list, and delete filters.",
+	gmail.MailGoogleComScope:       "Gmail Full Access — required for permanent deletion (gated behind --permanent and a typed confirmation).",
+	calendar.CalendarReadonlyScope: "Calendar Read-Only — read calendars and events.",
+	calendar.CalendarEventsScope:   "Calendar Events — create, update, and delete events.",
+	people.UserinfoProfileScope:    "Basic Profile — read the authenticated user's name and email for `me`.",
 }
 
 // Identity is grw's config.Identity, registered once at startup.

@@ -15,6 +15,7 @@ type EventListOptions struct {
 	MaxResults   int64
 	Header       string // Header message to print (empty to show count-based header)
 	EmptyMessage string // Message when no events found
+	IDsOnly      bool
 }
 
 // listAndPrintEvents fetches events and prints them according to the options.
@@ -23,6 +24,12 @@ func listAndPrintEvents(ctx context.Context, client CalendarClient, opts EventLi
 	events, err := client.ListEvents(ctx, opts.CalendarID, opts.TimeMin, opts.TimeMax, opts.MaxResults)
 	if err != nil {
 		return err
+	}
+	if opts.IDsOnly {
+		for _, event := range events {
+			fmt.Println(event.Id)
+		}
+		return nil
 	}
 
 	if len(events) == 0 {

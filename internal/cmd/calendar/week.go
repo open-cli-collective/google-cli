@@ -10,6 +10,7 @@ import (
 func newWeekCommand() *cobra.Command {
 	var (
 		calendarID string
+		idsOnly    bool
 	)
 
 	cmd := &cobra.Command{
@@ -41,11 +42,13 @@ Examples:
 					startOfWeek.Format("Mon, Jan 2"),
 					endOfWeek.Format("Mon, Jan 2, 2006")),
 				EmptyMessage: "No events this week.",
+				IDsOnly:      idsOnly,
 			})
 		},
 	}
 
 	cmd.Flags().StringVarP(&calendarID, "calendar", "c", "primary", "Calendar ID to query")
+	cmd.Flags().BoolVar(&idsOnly, "ids", false, "Output only event IDs (one per line, for piping)")
 
 	return cmd
 }

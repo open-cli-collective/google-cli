@@ -23,6 +23,7 @@ import (
 	drivecmd "github.com/open-cli-collective/google-cli/internal/cmd/drive"
 	mailcmd "github.com/open-cli-collective/google-cli/internal/cmd/mail"
 	mecmd "github.com/open-cli-collective/google-cli/internal/cmd/me"
+	rwcalendarcmd "github.com/open-cli-collective/google-cli/internal/rwcmd/calendar"
 	rwmailcmd "github.com/open-cli-collective/google-cli/internal/rwcmd/mail"
 )
 
@@ -46,7 +47,8 @@ type commandPair struct {
 }
 
 var writeCommandPairs = map[string]commandPair{
-	"mail": {read: mailcmd.NewCommand, write: rwmailcmd.NewCommand},
+	"calendar": {read: calcmd.NewCommand, write: rwcalendarcmd.NewCommand},
+	"mail":     {read: mailcmd.NewCommand, write: rwmailcmd.NewCommand},
 }
 
 type leafInfo struct {
@@ -523,8 +525,10 @@ func TestGroNeverLinksWriteCode(t *testing.T) {
 func TestGrwLinksWriteCode(t *testing.T) {
 	t.Parallel()
 	want := map[string]bool{
-		modulePath + "/internal/rw/gmail":   false,
-		modulePath + "/internal/rwcmd/mail": false,
+		modulePath + "/internal/rw/calendar":    false,
+		modulePath + "/internal/rw/gmail":       false,
+		modulePath + "/internal/rwcmd/calendar": false,
+		modulePath + "/internal/rwcmd/mail":     false,
 	}
 	for _, pkg := range goListDeps(t, "./cmd/grw") {
 		if _, ok := want[pkg.ImportPath]; ok {

@@ -13,6 +13,7 @@ func newEventsCommand() *cobra.Command {
 		maxResults int64
 		from       string
 		to         string
+		idsOnly    bool
 	)
 
 	cmd := &cobra.Command{
@@ -72,6 +73,7 @@ Examples:
 				MaxResults:   maxResults,
 				Header:       "", // Will be generated based on count
 				EmptyMessage: "No events found.",
+				IDsOnly:      idsOnly,
 			})
 		},
 	}
@@ -80,6 +82,7 @@ Examples:
 	cmd.Flags().Int64VarP(&maxResults, "max", "m", 10, "Maximum number of events to return")
 	cmd.Flags().StringVar(&from, "from", "", "Start date (YYYY-MM-DD)")
 	cmd.Flags().StringVar(&to, "to", "", "End date (YYYY-MM-DD)")
+	cmd.Flags().BoolVar(&idsOnly, "ids", false, "Output only event IDs (one per line, for piping)")
 
 	return cmd
 }
