@@ -1,0 +1,196 @@
+version: 2
+
+project_name: google-cli
+
+before:
+  hooks:
+    - sh -c "go mod tidy && git diff --exit-code go.mod go.sum"
+    - go test ./...
+
+builds:
+  - id: gro-darwin
+    main: ./cmd/gro
+    binary: gro
+    flags: ["-tags=keyring_no1password,keyring_nopassage"]
+    env: [CGO_ENABLED=1]
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    overrides:
+      - goos: darwin
+        goarch: amd64
+        goamd64: v1
+        env:
+          - CGO_ENABLED=1
+          - "CC=xcrun clang -arch x86_64"
+      - goos: darwin
+        goarch: arm64
+        goarm64: v8.0
+        env:
+          - CGO_ENABLED=1
+          - "CC=xcrun clang -arch arm64"
+    ldflags:
+      - -s -w
+      - -X github.com/open-cli-collective/google-cli/internal/version.Version={{.Version}}
+      - -X github.com/open-cli-collective/google-cli/internal/version.Commit={{.Commit}}
+      - -X github.com/open-cli-collective/google-cli/internal/version.Date={{.Date}}
+    hooks:
+      post:
+        - cmd: bash -c 'f="${CODESIGN_DARWIN_SCRIPT:-}"; if [ -z "$f" ]; then echo "skip codesign (CODESIGN_DARWIN_SCRIPT unset, local build)"; exit 0; fi; [ -x "$f" ] || { echo "CODESIGN_DARWIN_SCRIPT not executable ($f)" >&2; exit 1; }; exec "$f" "$0" "$1"' "{{ .Path }}" "{{ .Os }}"
+  - id: gro-unix-win
+    main: ./cmd/gro
+    binary: gro
+    flags: ["-tags=keyring_no1password,keyring_nopassage"]
+    env: [CGO_ENABLED=0]
+    goos: [linux, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/open-cli-collective/google-cli/internal/version.Version={{.Version}}
+      - -X github.com/open-cli-collective/google-cli/internal/version.Commit={{.Commit}}
+      - -X github.com/open-cli-collective/google-cli/internal/version.Date={{.Date}}
+  - id: grw-darwin
+    main: ./cmd/grw
+    binary: grw
+    flags: ["-tags=keyring_no1password,keyring_nopassage"]
+    env: [CGO_ENABLED=1]
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    overrides:
+      - goos: darwin
+        goarch: amd64
+        goamd64: v1
+        env:
+          - CGO_ENABLED=1
+          - "CC=xcrun clang -arch x86_64"
+      - goos: darwin
+        goarch: arm64
+        goarm64: v8.0
+        env:
+          - CGO_ENABLED=1
+          - "CC=xcrun clang -arch arm64"
+    ldflags:
+      - -s -w
+      - -X github.com/open-cli-collective/google-cli/internal/version.Version={{.Version}}
+      - -X github.com/open-cli-collective/google-cli/internal/version.Commit={{.Commit}}
+      - -X github.com/open-cli-collective/google-cli/internal/version.Date={{.Date}}
+    hooks:
+      post:
+        - cmd: bash -c 'f="${CODESIGN_DARWIN_SCRIPT:-}"; if [ -z "$f" ]; then echo "skip codesign (CODESIGN_DARWIN_SCRIPT unset, local build)"; exit 0; fi; [ -x "$f" ] || { echo "CODESIGN_DARWIN_SCRIPT not executable ($f)" >&2; exit 1; }; exec "$f" "$0" "$1"' "{{ .Path }}" "{{ .Os }}"
+  - id: grw-unix-win
+    main: ./cmd/grw
+    binary: grw
+    flags: ["-tags=keyring_no1password,keyring_nopassage"]
+    env: [CGO_ENABLED=0]
+    goos: [linux, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/open-cli-collective/google-cli/internal/version.Version={{.Version}}
+      - -X github.com/open-cli-collective/google-cli/internal/version.Commit={{.Commit}}
+      - -X github.com/open-cli-collective/google-cli/internal/version.Date={{.Date}}
+
+archives:
+  - id: gro
+    ids: [gro-darwin, gro-unix-win]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "gro_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md]
+  - id: grw
+    ids: [grw-darwin, grw-unix-win]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "grw_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md]
+
+nfpms:
+  - id: google-readonly
+    ids: [gro-unix-win]
+    package_name: google-readonly
+    vendor: Open CLI Collective
+    homepage: https://github.com/open-cli-collective/google-cli
+    maintainer: Open CLI Collective <https://github.com/open-cli-collective>
+    description: Read-only command-line interface for Google services
+    license: MIT
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/licenses/google-readonly/LICENSE
+  - id: google-readwrite
+    ids: [grw-unix-win]
+    package_name: google-readwrite
+    vendor: Open CLI Collective
+    homepage: https://github.com/open-cli-collective/google-cli
+    maintainer: Open CLI Collective <https://github.com/open-cli-collective>
+    description: Read-write command-line interface for Google services
+    license: MIT
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/licenses/google-readwrite/LICENSE
+
+homebrew_casks:
+  - name: gro
+    ids: [gro]
+    skip_upload: true
+    repository:
+      owner: open-cli-collective
+      name: homebrew-tap
+    homepage: https://github.com/open-cli-collective/google-cli
+    description: "Read-only command-line interface for Google services"
+    binaries: [gro]
+    hooks:
+      post:
+        install: |
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gro"]
+    caveats: |
+      gro has been installed. Run 'gro init' to configure.
+      On macOS, your token is stored securely in the system Keychain.
+  - name: grw
+    ids: [grw]
+    skip_upload: true
+    repository:
+      owner: open-cli-collective
+      name: homebrew-tap
+    homepage: https://github.com/open-cli-collective/google-cli
+    description: "Read-write command-line interface for Google services"
+    binaries: [grw]
+    hooks:
+      post:
+        install: |
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/grw"]
+    caveats: |
+      grw has been installed. Run 'grw init' to configure.
+      On macOS, your token is stored securely in the system Keychain.
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "Merge pull request"
+  groups:
+    - title: Features
+      regexp: '^feat:'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^fix:'
+      order: 1
+    - title: Other
+      order: 999
+
+release:
+  replace_existing_artifacts: true

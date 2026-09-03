@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+
+PackageIdentifier: OpenCLICollective.google-readonly
+PackageVersion: 0.0.0
+PackageLocale: en-US
+Publisher: Open CLI Collective
+PublisherUrl: https://github.com/open-cli-collective
+PackageName: Google Readonly CLI
+PackageUrl: https://github.com/open-cli-collective/google-cli
+License: MIT
+LicenseUrl: https://github.com/open-cli-collective/google-cli/blob/main/LICENSE
+ShortDescription: Read-only Google CLI for Gmail, Calendar, Contacts, and Drive
+Description: A read-only Google CLI for Gmail, Calendar, Contacts, and Drive.
+Tags: [google, gmail, calendar, contacts, drive, cli, api, readonly, automation]
+ReleaseNotesUrl: https://github.com/open-cli-collective/google-cli/releases
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0

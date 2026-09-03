@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>google-readonly</id>
+    <version>0.0.0</version>
+    <title>Google Readonly CLI</title>
+    <authors>Open CLI Collective</authors>
+    <owners>rianjs</owners>
+    <licenseUrl>https://github.com/open-cli-collective/google-cli/blob/main/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/open-cli-collective/google-cli#readme</projectUrl>
+    <projectSourceUrl>https://github.com/open-cli-collective/google-cli</projectSourceUrl>
+    <packageSourceUrl>https://github.com/open-cli-collective/google-cli/tree/main/packaging/chocolatey/google-readonly</packageSourceUrl>
+    <bugTrackerUrl>https://github.com/open-cli-collective/google-cli/issues</bugTrackerUrl>
+    <copyright>Copyright (c) 2026 Open CLI Collective</copyright>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>A read-only Google CLI for Gmail, Calendar, Contacts, and Drive.</description>
+    <summary>Read-only Google CLI for Gmail, Calendar, Contacts, and Drive</summary>
+    <releaseNotes>https://github.com/open-cli-collective/google-cli/releases</releaseNotes>
+    <tags>google gmail calendar contacts drive cli api readonly automation</tags>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
