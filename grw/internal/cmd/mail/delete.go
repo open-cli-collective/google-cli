@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/open-cli-collective/google-cli-common/bulk"
+	"github.com/open-cli-collective/google-cli/common/bulk"
 )
 
 func newDeleteCommand() *cobra.Command {

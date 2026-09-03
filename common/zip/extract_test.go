@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 func createTestZip(t *testing.T, files map[string][]byte) string {

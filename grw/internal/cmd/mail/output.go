@@ -10,7 +10,7 @@ import (
 
 	gmailv1 "google.golang.org/api/gmail/v1"
 
-	"github.com/open-cli-collective/google-readwrite/internal/gmailrw"
+	"github.com/open-cli-collective/google-cli/grw/internal/gmailrw"
 )
 
 // WriteClient is the interface grw's destructive/settings leaves depend on. It

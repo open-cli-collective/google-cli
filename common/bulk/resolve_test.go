@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 func TestResolveIDs_Args(t *testing.T) {

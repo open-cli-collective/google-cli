@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/open-cli-collective/google-cli-common/calendar"
+	"github.com/open-cli-collective/google-cli/common/calendar"
 )
 
 // EventListOptions configures how events are listed and displayed.

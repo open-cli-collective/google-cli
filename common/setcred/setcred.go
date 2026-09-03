@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 
-	"github.com/open-cli-collective/google-cli-common/keychain"
+	"github.com/open-cli-collective/google-cli/common/keychain"
 )
 
 type options struct {

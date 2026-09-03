@@ -3,7 +3,7 @@ package bulk
 import (
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 func TestResult_Print_Text(t *testing.T) {

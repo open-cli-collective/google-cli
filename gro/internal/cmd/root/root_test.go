@@ -14,9 +14,9 @@ import (
 
 	"github.com/open-cli-collective/cli-common/credstore"
 
-	"github.com/open-cli-collective/google-cli-common/migrationsink"
-	"github.com/open-cli-collective/google-cli-common/rootutil"
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/migrationsink"
+	"github.com/open-cli-collective/google-cli/common/rootutil"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 func TestRootCommand(t *testing.T) {

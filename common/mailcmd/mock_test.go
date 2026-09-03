@@ -5,7 +5,7 @@ import (
 
 	"google.golang.org/api/gmail/v1"
 
-	gmailapi "github.com/open-cli-collective/google-cli-common/gmail"
+	gmailapi "github.com/open-cli-collective/google-cli/common/gmail"
 )
 
 // MockGmailClient is a configurable mock for MailClient.

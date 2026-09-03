@@ -13,8 +13,8 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/googleapi"
 
-	"github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/keychain"
+	"github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/keychain"
 )
 
 // CheckScopesMigration compares the registered CLI's currently-required scopes

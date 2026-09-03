@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 func TestArchiveCommand(t *testing.T) {

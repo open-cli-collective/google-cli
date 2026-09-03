@@ -23,7 +23,7 @@ import (
 	"github.com/open-cli-collective/cli-common/credstore"
 	"golang.org/x/oauth2"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 )
 
 // KeyOAuthToken is gro's single bundle key (§1.3). The migration renames the

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 )
 
 // TestDeprecatedWrappers verifies that auth package wrappers delegate to config package

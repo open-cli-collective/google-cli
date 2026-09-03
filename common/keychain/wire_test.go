@@ -5,7 +5,7 @@ import (
 
 	"github.com/open-cli-collective/cli-common/credstore"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 )
 
 // resetOverride keeps the package-level flag override clean across

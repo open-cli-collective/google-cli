@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 func TestCategorizeCommand(t *testing.T) {

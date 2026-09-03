@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/format"
-	"github.com/open-cli-collective/google-cli-common/gmail"
-	ziputil "github.com/open-cli-collective/google-cli-common/zip"
+	"github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/format"
+	"github.com/open-cli-collective/google-cli/common/gmail"
+	ziputil "github.com/open-cli-collective/google-cli/common/zip"
 )
 
 func newDownloadAttachmentsCommand() *cobra.Command {

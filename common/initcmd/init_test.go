@@ -16,11 +16,11 @@ import (
 	"golang.org/x/oauth2"
 	"google.golang.org/api/googleapi"
 
-	"github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/keychain"
-	"github.com/open-cli-collective/google-cli-common/people"
-	"github.com/open-cli-collective/google-cli-common/testutil"
-	"github.com/open-cli-collective/google-cli-common/view"
+	"github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/keychain"
+	"github.com/open-cli-collective/google-cli/common/people"
+	"github.com/open-cli-collective/google-cli/common/testutil"
+	"github.com/open-cli-collective/google-cli/common/view"
 )
 
 const validOAuthJSON = `{

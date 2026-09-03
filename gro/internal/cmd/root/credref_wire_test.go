@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/open-cli-collective/google-cli-common/keychain"
-	"github.com/open-cli-collective/google-cli-common/rootutil"
+	"github.com/open-cli-collective/google-cli/common/keychain"
+	"github.com/open-cli-collective/google-cli/common/rootutil"
 )
 
 // TestWireCredentialRefSelection_FlagSet proves a --ref on a real command

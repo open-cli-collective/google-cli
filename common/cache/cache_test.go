@@ -8,8 +8,8 @@ import (
 
 	"github.com/open-cli-collective/cli-common/statedirtest"
 
-	"github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 // hermetic isolates the §3.1 7-var env set so os.UserCacheDir /

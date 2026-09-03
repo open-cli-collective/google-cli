@@ -7,7 +7,7 @@ import (
 
 	gmailv1 "google.golang.org/api/gmail/v1"
 
-	"github.com/open-cli-collective/google-cli-common/gmail"
+	"github.com/open-cli-collective/google-cli/common/gmail"
 )
 
 // MailClient defines the interface for Gmail client operations used by mail commands.

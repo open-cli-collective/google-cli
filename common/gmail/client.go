@@ -10,7 +10,7 @@ import (
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 
-	"github.com/open-cli-collective/google-cli-common/auth"
+	"github.com/open-cli-collective/google-cli/common/auth"
 )
 
 // Client wraps the Gmail API service

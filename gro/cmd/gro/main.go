@@ -12,10 +12,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 
-	"github.com/open-cli-collective/google-readonly/internal/appidentity"
-	"github.com/open-cli-collective/google-readonly/internal/cmd/root"
+	"github.com/open-cli-collective/google-cli/gro/internal/appidentity"
+	"github.com/open-cli-collective/google-cli/gro/internal/cmd/root"
 )
 
 func main() {

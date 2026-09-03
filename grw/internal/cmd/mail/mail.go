@@ -3,7 +3,7 @@ package mail
 import (
 	"github.com/spf13/cobra"
 
-	mailcmd "github.com/open-cli-collective/google-cli-common/mailcmd"
+	mailcmd "github.com/open-cli-collective/google-cli/common/mailcmd"
 )
 
 // NewCommand returns grw's `mail` command: the shared non-destructive leaves

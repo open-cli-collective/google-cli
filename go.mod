@@ -1,25 +1,22 @@
-module github.com/open-cli-collective/google-readonly
+module github.com/open-cli-collective/google-cli
 
 go 1.26.4
 
 require (
+	github.com/atotto/clipboard v0.1.4
+	github.com/byteness/keyring v1.12.0
+	github.com/charmbracelet/huh v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/muesli/termenv v0.16.0
 	github.com/open-cli-collective/cli-common v0.5.0
+	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.10.2
+	github.com/yuin/goldmark v1.8.4
+	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.36.0
+	golang.org/x/term v0.45.0
 	google.golang.org/api v0.289.0
-)
-
-require (
-	github.com/atotto/clipboard v0.1.4 // indirect
-	github.com/byteness/keyring v1.12.0 // indirect
-	github.com/charmbracelet/huh v1.0.0 // indirect
-	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
-	github.com/yuin/goldmark v1.8.4 // indirect
-	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -66,7 +63,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/noamcohen97/touchid-go v0.3.0 // indirect
-	github.com/open-cli-collective/google-cli-common v0.3.1
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/credtest"
-	"github.com/open-cli-collective/google-cli-common/keychain"
+	"github.com/open-cli-collective/google-cli/common/credtest"
+	"github.com/open-cli-collective/google-cli/common/keychain"
 )
 
 const tokenJSON = `{"access_token":"SECRET-ACCESS","refresh_token":"SECRET-REFRESH","token_type":"Bearer"}`

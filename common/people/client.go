@@ -14,7 +14,7 @@ import (
 	"google.golang.org/api/option"
 	peopleapi "google.golang.org/api/people/v1"
 
-	"github.com/open-cli-collective/google-cli-common/auth"
+	"github.com/open-cli-collective/google-cli/common/auth"
 )
 
 // Profile is the subset of People API data we surface for `gro me`.

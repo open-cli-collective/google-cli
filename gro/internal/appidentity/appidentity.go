@@ -2,7 +2,7 @@
 // keyring directory name, default credential ref, product name, and the exact
 // OAuth scope set (with human descriptions) this CLI requests. It is the single
 // place that defines what makes this binary "gro" as opposed to any other CLI
-// built on github.com/open-cli-collective/google-cli-common.
+// built on the shared common packages.
 //
 // main registers this identity via config.Register before the command tree
 // runs; the architecture test asserts the scope set stays non-destructive.
@@ -14,7 +14,7 @@ import (
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/people/v1"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 )
 
 // Scopes is the OAuth scope set gro requests. Gmail uses the modify scope for
