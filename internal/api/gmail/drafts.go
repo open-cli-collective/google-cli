@@ -67,9 +67,29 @@ type DraftResult struct {
 	ThreadID  string `json:"threadId,omitempty"`
 }
 
+// DraftSummary is the metadata shown before sending a draft.
+type DraftSummary struct {
+	ID              string
+	MessageID       string
+	ThreadID        string
+	To              string
+	Cc              string
+	Bcc             string
+	Subject         string
+	From            string
+	AttachmentCount int
+}
+
+// SentResult identifies the message created by sending a draft.
+type SentResult struct {
+	ID       string
+	ThreadID string
+	LabelIDs []string
+}
+
 // CreateDraft assembles a MIME message and POSTs to users.drafts.create.
-// The CLI never calls drafts.send — drafts sit in the user's Drafts folder
-// for explicit human review.
+// This shared read layer never calls drafts.send; sending stays isolated in
+// internal/rw/gmail for grw.
 func (c *Client) CreateDraft(ctx context.Context, msg DraftMessage) (*DraftResult, error) {
 	raw, err := buildMIME(msg)
 	if err != nil {

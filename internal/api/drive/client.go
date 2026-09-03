@@ -17,6 +17,9 @@ type Client struct {
 	service *drive.Service
 }
 
+// Service returns the underlying Drive API service.
+func (c *Client) Service() *drive.Service { return c.service }
+
 // NewClient creates a new Drive client with OAuth2 authentication
 func NewClient(ctx context.Context) (*Client, error) {
 	client, err := auth.GetHTTPClient(ctx)

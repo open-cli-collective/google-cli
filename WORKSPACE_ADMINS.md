@@ -48,9 +48,12 @@ https://www.googleapis.com/auth/calendar.readonly
 https://www.googleapis.com/auth/calendar.events
 https://www.googleapis.com/auth/contacts
 https://www.googleapis.com/auth/userinfo.profile
+https://www.googleapis.com/auth/drive
+https://www.googleapis.com/auth/drive.readonly
+https://www.googleapis.com/auth/drive.metadata
 ```
 
-Gmail settings access supports filters. The broad mail scope is required for permanent deletion; the command defaults to recoverable Trash and gates permanent deletion behind `--permanent --yes`. Calendar scopes support reading and mutating events, the Contacts scope supports reading and mutating contacts and groups, and the profile scope supports `grw me`.
+Gmail settings access supports filters. The broad mail scope is required for permanent deletion; the command defaults to recoverable Trash and gates permanent deletion behind `--permanent --yes`. Calendar scopes support reading and mutating events, the Contacts scope supports reading and mutating contacts and groups, the Drive scopes support reading, uploading, organizing, trashing, restoring, and permanently deleting files, and the profile scope supports `grw me`.
 
 ## Distribute and verify
 

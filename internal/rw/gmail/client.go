@@ -1,5 +1,5 @@
 // Package gmail extends the read/organize Gmail API client in internal/api/gmail
-// with the read-WRITE operations grw adds: trash and
+// with the read-WRITE operations grw adds: draft sending, trash and
 // permanent delete, label lifecycle (create/rename/delete — the "folders" and
 // "subfolders" users think in), and filter management. It embeds the shared
 // *gmail.Client so all read and non-destructive-organize methods (search, read,
@@ -20,6 +20,8 @@ import (
 // *gmail.Client and adds the write operations below.
 type Client struct {
 	*gmailapi.Client
+	service *gmailv1.Service
+	userID  string
 }
 
 // NewClient builds a write-capable Gmail client using the shared OAuth/token
@@ -30,7 +32,7 @@ func NewClient(ctx context.Context) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{Client: base}, nil
+	return &Client{Client: base, service: base.Service(), userID: base.UserID()}, nil
 }
 
 // ---------------------------------------------------------------------------

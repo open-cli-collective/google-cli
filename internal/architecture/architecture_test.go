@@ -25,6 +25,7 @@ import (
 	mecmd "github.com/open-cli-collective/google-cli/internal/cmd/me"
 	rwcalendarcmd "github.com/open-cli-collective/google-cli/internal/rwcmd/calendar"
 	rwcontactscmd "github.com/open-cli-collective/google-cli/internal/rwcmd/contacts"
+	rwdrivecmd "github.com/open-cli-collective/google-cli/internal/rwcmd/drive"
 	rwmailcmd "github.com/open-cli-collective/google-cli/internal/rwcmd/mail"
 )
 
@@ -50,6 +51,7 @@ type commandPair struct {
 var writeCommandPairs = map[string]commandPair{
 	"calendar": {read: calcmd.NewCommand, write: rwcalendarcmd.NewCommand},
 	"contacts": {read: contactscmd.NewCommand, write: rwcontactscmd.NewCommand},
+	"drive":    {read: drivecmd.NewCommand, write: rwdrivecmd.NewCommand},
 	"mail":     {read: mailcmd.NewCommand, write: rwmailcmd.NewCommand},
 }
 
@@ -423,6 +425,7 @@ var knownGrwScopes = map[string]bool{
 	"https://www.googleapis.com/auth/userinfo.profile":     true,
 	"https://www.googleapis.com/auth/drive.readonly":       true,
 	"https://www.googleapis.com/auth/drive.metadata":       true,
+	"https://www.googleapis.com/auth/drive":                true,
 	"https://www.googleapis.com/auth/gmail.settings.basic": true,
 	"https://mail.google.com/":                             true,
 }
@@ -530,8 +533,10 @@ func TestGrwLinksWriteCode(t *testing.T) {
 		modulePath + "/internal/rw/calendar":    false,
 		modulePath + "/internal/rw/contacts":    false,
 		modulePath + "/internal/rw/gmail":       false,
+		modulePath + "/internal/rw/drive":       false,
 		modulePath + "/internal/rwcmd/calendar": false,
 		modulePath + "/internal/rwcmd/contacts": false,
+		modulePath + "/internal/rwcmd/drive":    false,
 		modulePath + "/internal/rwcmd/mail":     false,
 	}
 	for _, pkg := range goListDeps(t, "./cmd/grw") {
