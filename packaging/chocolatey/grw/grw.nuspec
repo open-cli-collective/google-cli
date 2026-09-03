@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>grw</id>
+    <version>0.0.0</version>
+    <title>Google Read-Write CLI</title>
+    <authors>Open CLI Collective</authors>
+    <owners>rianjs</owners>
+    <licenseUrl>https://github.com/open-cli-collective/google-cli/blob/main/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/open-cli-collective/google-cli#readme</projectUrl>
+    <projectSourceUrl>https://github.com/open-cli-collective/google-cli</projectSourceUrl>
+    <packageSourceUrl>https://github.com/open-cli-collective/google-cli/tree/main/packaging/chocolatey/grw</packageSourceUrl>
+    <bugTrackerUrl>https://github.com/open-cli-collective/google-cli/issues</bugTrackerUrl>
+    <copyright>Copyright (c) 2026 Open CLI Collective</copyright>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>A read-write Google CLI: everything gro does plus Gmail delete and restore, folders, and filters.</description>
+    <summary>Read-write Google CLI with Gmail cleanup, folders, and filters</summary>
+    <releaseNotes>https://github.com/open-cli-collective/google-cli/releases</releaseNotes>
+    <tags>google gmail calendar contacts drive cli api readwrite automation</tags>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
