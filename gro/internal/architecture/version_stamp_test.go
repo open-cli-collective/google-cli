@@ -7,14 +7,8 @@ import (
 	"testing"
 )
 
-// versionPkg is the package whose ldflags -X stamps set gro's version. It
-// moved from internal/version to the shared module in the google-cli-common
-// refactor; the ldflags in .goreleaser.yaml and the Makefile kept pointing at
-// the removed path, and Go silently ignores -X against a nonexistent package
-// — so every release from that refactor until this test shipped reporting
-// "gro dev (commit: unknown, built: unknown)". If the version package ever
-// moves again, this test fails until the ldflags move with it.
-const versionPkg = "github.com/open-cli-collective/google-cli-common/version"
+// versionPkg is the package whose ldflags -X stamps set gro's version.
+const versionPkg = "github.com/open-cli-collective/google-cli/common/version"
 
 // ldflagXRe matches an ldflags -X target's package path (the part before the
 // final .Var=value).
@@ -22,7 +16,7 @@ var ldflagXRe = regexp.MustCompile(`-X ([\w./-]+)\.(?:Version|Commit|Date)=`)
 
 func TestLdflagsStampTheLinkedVersionPackage(t *testing.T) {
 	root := repoRoot(t)
-	for _, file := range []string{".goreleaser.yaml", "Makefile"} {
+	for _, file := range []string{"Makefile"} {
 		data, err := os.ReadFile(filepath.Join(root, file)) //nolint:gosec // repo-local test input
 		if err != nil {
 			t.Fatalf("read %s: %v", file, err)

@@ -12,10 +12,10 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/credtest"
-	"github.com/open-cli-collective/google-cli-common/identitycache"
-	"github.com/open-cli-collective/google-cli-common/keychain"
+	"github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/credtest"
+	"github.com/open-cli-collective/google-cli/common/identitycache"
+	"github.com/open-cli-collective/google-cli/common/keychain"
 )
 
 func TestMain(m *testing.M) {

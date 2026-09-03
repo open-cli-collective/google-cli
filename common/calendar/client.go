@@ -8,7 +8,7 @@ import (
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 
-	"github.com/open-cli-collective/google-cli-common/auth"
+	"github.com/open-cli-collective/google-cli/common/auth"
 )
 
 // Client wraps the Google Calendar API service

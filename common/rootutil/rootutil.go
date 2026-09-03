@@ -18,9 +18,9 @@ import (
 
 	cccredstore "github.com/open-cli-collective/cli-common/credstore"
 
-	"github.com/open-cli-collective/google-cli-common/keychain"
-	"github.com/open-cli-collective/google-cli-common/log"
-	"github.com/open-cli-collective/google-cli-common/migrationsink"
+	"github.com/open-cli-collective/google-cli/common/keychain"
+	"github.com/open-cli-collective/google-cli/common/log"
+	"github.com/open-cli-collective/google-cli/common/migrationsink"
 )
 
 // CredentialRefFlagName is the global per-invocation credential-ref selector.

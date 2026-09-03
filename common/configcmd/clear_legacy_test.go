@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	appconfig "github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/credtest"
+	appconfig "github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/credtest"
 )
 
 // withSyntheticConfigCandidates overrides configFilesForClearFn so Linux CI

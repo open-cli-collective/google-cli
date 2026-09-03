@@ -3,7 +3,7 @@ package format
 import (
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 func TestTruncate(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/open-cli-collective/google-cli-common/migrationsink"
+	"github.com/open-cli-collective/google-cli/common/migrationsink"
 )
 
 // JSON encodes data as indented JSON to the given writer. If a one-time

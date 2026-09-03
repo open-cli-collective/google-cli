@@ -8,7 +8,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 
-	"github.com/open-cli-collective/google-cli-common/auth"
+	"github.com/open-cli-collective/google-cli/common/auth"
 )
 
 // Client wraps the Google People API service for contacts

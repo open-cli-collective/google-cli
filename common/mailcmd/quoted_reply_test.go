@@ -3,8 +3,8 @@ package mailcmd
 import (
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/gmail"
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/gmail"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 const quotedReplyMarkerForTest = "[quoted reply history elided; use --include-quoted-reply-bodies to show]"

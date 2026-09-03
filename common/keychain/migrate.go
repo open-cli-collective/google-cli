@@ -13,8 +13,8 @@ import (
 	"github.com/open-cli-collective/cli-common/credstore"
 	"golang.org/x/oauth2/google"
 
-	"github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/migrationsink"
+	"github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/migrationsink"
 )
 
 // One-time legacy migration (§1.8 / §2.3). Two independent artifacts:

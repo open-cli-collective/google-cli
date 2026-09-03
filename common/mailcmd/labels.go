@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	gmailapi "google.golang.org/api/gmail/v1"
 
-	"github.com/open-cli-collective/google-cli-common/format"
+	"github.com/open-cli-collective/google-cli/common/format"
 )
 
 // Label represents a Gmail label for output

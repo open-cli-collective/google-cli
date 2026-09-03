@@ -7,8 +7,8 @@ import (
 
 	"google.golang.org/api/gmail/v1"
 
-	gmailapi "github.com/open-cli-collective/google-cli-common/gmail"
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	gmailapi "github.com/open-cli-collective/google-cli/common/gmail"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 // withMockClient sets up a mock client factory for tests

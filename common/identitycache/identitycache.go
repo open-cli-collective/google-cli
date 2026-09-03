@@ -14,7 +14,7 @@ import (
 
 	clicache "github.com/open-cli-collective/cli-common/cache"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 )
 
 const (

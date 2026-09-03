@@ -7,10 +7,10 @@ import (
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/people/v1"
 
-	calendarapi "github.com/open-cli-collective/google-cli-common/calendar"
-	contactsapi "github.com/open-cli-collective/google-cli-common/contacts"
-	driveapi "github.com/open-cli-collective/google-cli-common/drive"
-	gmailapi "github.com/open-cli-collective/google-cli-common/gmail"
+	calendarapi "github.com/open-cli-collective/google-cli/common/calendar"
+	contactsapi "github.com/open-cli-collective/google-cli/common/contacts"
+	driveapi "github.com/open-cli-collective/google-cli/common/drive"
+	gmailapi "github.com/open-cli-collective/google-cli/common/gmail"
 )
 
 // Gmail fixtures

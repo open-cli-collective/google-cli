@@ -4,9 +4,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 
-	"github.com/open-cli-collective/google-readonly/internal/appidentity"
+	"github.com/open-cli-collective/google-cli/gro/internal/appidentity"
 )
 
 // TestMain registers gro's real identity before any test runs, mirroring what

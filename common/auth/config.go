@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 )
 
 // Re-export constants for backward compatibility

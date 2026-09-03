@@ -7,9 +7,9 @@ import (
 
 	"github.com/open-cli-collective/cli-common/statedirtest"
 
-	"github.com/open-cli-collective/google-cli-common/cache"
-	"github.com/open-cli-collective/google-cli-common/drive"
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/cache"
+	"github.com/open-cli-collective/google-cli/common/drive"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 func TestDrivesCommand(t *testing.T) {

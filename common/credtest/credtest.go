@@ -19,8 +19,8 @@ import (
 	"github.com/open-cli-collective/cli-common/credstore"
 	"github.com/open-cli-collective/cli-common/statedirtest"
 
-	"github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/migrationsink"
+	"github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/migrationsink"
 )
 
 // Setup isolates the full §3.1 7-var env set under t.TempDir() (via

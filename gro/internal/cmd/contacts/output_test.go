@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/contacts"
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/contacts"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 func TestPrintContact(t *testing.T) {

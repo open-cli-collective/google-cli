@@ -11,9 +11,9 @@ import (
 	clicache "github.com/open-cli-collective/cli-common/cache"
 	"github.com/spf13/cobra"
 
-	"github.com/open-cli-collective/google-cli-common/cache"
-	"github.com/open-cli-collective/google-cli-common/drive"
-	"github.com/open-cli-collective/google-cli-common/output"
+	"github.com/open-cli-collective/google-cli/common/cache"
+	"github.com/open-cli-collective/google-cli/common/drive"
+	"github.com/open-cli-collective/google-cli/common/output"
 )
 
 // validResources is the closed set of resource names the the cache exposes

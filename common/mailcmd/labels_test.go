@@ -5,7 +5,7 @@ import (
 
 	gmailapi "google.golang.org/api/gmail/v1"
 
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 func TestLabelsCommand(t *testing.T) {

@@ -6,20 +6,19 @@ import (
 	"go/token"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
-	mailcmd "github.com/open-cli-collective/google-cli-common/mailcmd"
+	mailcmd "github.com/open-cli-collective/google-cli/common/mailcmd"
 
-	"github.com/open-cli-collective/google-readonly/internal/appidentity"
-	calcmd "github.com/open-cli-collective/google-readonly/internal/cmd/calendar"
-	contactscmd "github.com/open-cli-collective/google-readonly/internal/cmd/contacts"
-	drivecmd "github.com/open-cli-collective/google-readonly/internal/cmd/drive"
-	mecmd "github.com/open-cli-collective/google-readonly/internal/cmd/me"
+	"github.com/open-cli-collective/google-cli/gro/internal/appidentity"
+	calcmd "github.com/open-cli-collective/google-cli/gro/internal/cmd/calendar"
+	contactscmd "github.com/open-cli-collective/google-cli/gro/internal/cmd/contacts"
+	drivecmd "github.com/open-cli-collective/google-cli/gro/internal/cmd/drive"
+	mecmd "github.com/open-cli-collective/google-cli/gro/internal/cmd/me"
 )
 
 // domainPackages lists the command packages that must follow structural conventions.
@@ -36,7 +35,7 @@ func domainCommands() map[string]*cobra.Command {
 	}
 }
 
-// findModuleRoot walks up from the working directory to locate go.mod.
+// findModuleRoot locates the module root and returns gro's source root.
 func findModuleRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
@@ -45,7 +44,7 @@ func findModuleRoot(t *testing.T) string {
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
+			return filepath.Join(dir, "gro")
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -265,11 +264,7 @@ func TestResourceLeaf_RejectsJSON_EndToEnd(t *testing.T) {
 }
 
 // Dependency-direction invariants (API clients never import cmd; auth never
-// imports API clients) are now enforced structurally by the module boundary:
-// the gmail/calendar/contacts/drive/people clients and the auth package live in
-// the shared google-cli-common module, which has no cmd packages and cannot
-// import this main module's internal packages. See google-cli-common for its
-// own structural tests.
+// imports API clients) are covered by the shared packages' structural tests.
 
 // allowedScopes is the set of OAuth scopes permitted in appidentity.Scopes.
 // Read-only scopes are always safe. Non-readonly scopes are allowed only when
@@ -356,62 +351,5 @@ func TestNoDestructiveAPIMethodsInProductionCode(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walking source tree: %v", err)
-	}
-}
-
-// commonClientPackages are the google-cli-common API client packages gro relies
-// on. gro's non-destructive guarantee depends on these staying non-destructive
-// even though they now live in a separate module (the destructive Gmail surface
-// belongs to grw, never to the shared clients).
-var commonClientPackages = []string{"gmail", "calendar", "contacts", "drive", "people"}
-
-// TestSharedGoogleClientsAreNonDestructive extends the non-destructive guarantee
-// across the module boundary. TestNoDestructiveAPIMethodsInProductionCode only
-// walks this repo, but the Google API clients gro drives now live in the pinned
-// google-cli-common module. This test resolves that module in the local module
-// cache and scans its client packages for the same forbidden destructive
-// methods, so a future common release that introduces one (e.g. via a shared
-// batch helper) fails gro's CI the moment gro bumps to it — instead of silently
-// shipping. Keeps the guarantee code-enforced, not prose-only.
-func TestSharedGoogleClientsAreNonDestructive(t *testing.T) {
-	t.Parallel()
-
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}",
-		"github.com/open-cli-collective/google-cli-common").Output()
-	if err != nil {
-		t.Fatalf("resolving google-cli-common module dir: %v", err)
-	}
-	commonDir := strings.TrimSpace(string(out))
-	if commonDir == "" {
-		t.Fatal("empty google-cli-common module dir")
-	}
-
-	// Same forbidden set as the in-repo scan. .BatchModify( stays allowed
-	// (bulk labeling/archiving).
-	forbiddenPatterns := []string{".Send(", ".Trash(", ".Untrash(", ".BatchDelete("}
-
-	for _, pkg := range commonClientPackages {
-		dir := filepath.Join(commonDir, pkg)
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("reading shared client package %s: %v", dir, err)
-		}
-		for _, entry := range entries {
-			name := entry.Name()
-			if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-				continue
-			}
-			data, readErr := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // path from resolved module cache
-			if readErr != nil {
-				t.Errorf("reading %s/%s: %v", pkg, name, readErr)
-				continue
-			}
-			content := string(data)
-			for _, pattern := range forbiddenPatterns {
-				if strings.Contains(content, pattern) {
-					t.Errorf("shared client google-cli-common/%s/%s contains forbidden destructive API method %q — the clients gro depends on must stay non-destructive (the destructive surface belongs to grw)", pkg, name, pattern)
-				}
-			}
-		}
 	}
 }

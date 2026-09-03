@@ -13,7 +13,7 @@ import (
 
 	gmailv1 "google.golang.org/api/gmail/v1"
 
-	"github.com/open-cli-collective/google-cli-common/gmail"
+	"github.com/open-cli-collective/google-cli/common/gmail"
 )
 
 // Client is grw's Gmail client. It promotes every method of the shared

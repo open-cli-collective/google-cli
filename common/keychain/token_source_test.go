@@ -6,8 +6,8 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/credtest"
+	"github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/credtest"
 )
 
 // fakeBase returns toks[0], then toks[1], ... one per Token() call (last one

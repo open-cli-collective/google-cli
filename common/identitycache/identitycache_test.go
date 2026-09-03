@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/credtest"
+	"github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/credtest"
 )
 
 func TestMain(m *testing.M) {

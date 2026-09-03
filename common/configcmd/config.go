@@ -13,10 +13,10 @@ import (
 
 	"github.com/open-cli-collective/cli-common/credstore"
 
-	"github.com/open-cli-collective/google-cli-common/config"
-	"github.com/open-cli-collective/google-cli-common/gmail"
-	"github.com/open-cli-collective/google-cli-common/keychain"
-	"github.com/open-cli-collective/google-cli-common/output"
+	"github.com/open-cli-collective/google-cli/common/config"
+	"github.com/open-cli-collective/google-cli/common/gmail"
+	"github.com/open-cli-collective/google-cli/common/keychain"
+	"github.com/open-cli-collective/google-cli/common/output"
 )
 
 // configFilesForClear returns the config files `clear --all` should remove,

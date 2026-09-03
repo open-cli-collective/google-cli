@@ -1,0 +1,10 @@
+bin/
+dist/
+coverage.out
+coverage.html
+*.out
+
+.DS_Store
+.idea/
+.vscode/
+*.swp

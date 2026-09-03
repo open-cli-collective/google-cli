@@ -8,19 +8,19 @@ import (
 
 	"github.com/spf13/cobra"
 
-	config "github.com/open-cli-collective/google-cli-common/configcmd"
-	"github.com/open-cli-collective/google-cli-common/initcmd"
-	mail "github.com/open-cli-collective/google-cli-common/mailcmd"
-	"github.com/open-cli-collective/google-cli-common/profilescmd"
-	"github.com/open-cli-collective/google-cli-common/refreshcmd"
-	"github.com/open-cli-collective/google-cli-common/rootutil"
-	"github.com/open-cli-collective/google-cli-common/setcred"
-	"github.com/open-cli-collective/google-cli-common/version"
+	config "github.com/open-cli-collective/google-cli/common/configcmd"
+	"github.com/open-cli-collective/google-cli/common/initcmd"
+	mail "github.com/open-cli-collective/google-cli/common/mailcmd"
+	"github.com/open-cli-collective/google-cli/common/profilescmd"
+	"github.com/open-cli-collective/google-cli/common/refreshcmd"
+	"github.com/open-cli-collective/google-cli/common/rootutil"
+	"github.com/open-cli-collective/google-cli/common/setcred"
+	"github.com/open-cli-collective/google-cli/common/version"
 
-	"github.com/open-cli-collective/google-readonly/internal/cmd/calendar"
-	"github.com/open-cli-collective/google-readonly/internal/cmd/contacts"
-	"github.com/open-cli-collective/google-readonly/internal/cmd/drive"
-	"github.com/open-cli-collective/google-readonly/internal/cmd/me"
+	"github.com/open-cli-collective/google-cli/gro/internal/cmd/calendar"
+	"github.com/open-cli-collective/google-cli/gro/internal/cmd/contacts"
+	"github.com/open-cli-collective/google-cli/gro/internal/cmd/drive"
+	"github.com/open-cli-collective/google-cli/gro/internal/cmd/me"
 )
 
 var (

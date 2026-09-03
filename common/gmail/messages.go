@@ -8,7 +8,7 @@ import (
 
 	"google.golang.org/api/gmail/v1"
 
-	"github.com/open-cli-collective/google-cli-common/log"
+	"github.com/open-cli-collective/google-cli/common/log"
 )
 
 // Message represents a simplified email message

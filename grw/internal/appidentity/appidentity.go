@@ -2,7 +2,7 @@
 // keyring directory name, default credential ref, product name, and the OAuth
 // scope set this CLI requests. It is the single place that defines what makes
 // this binary "grw" as opposed to gro or any other CLI built on
-// github.com/open-cli-collective/google-cli-common.
+// the shared common packages.
 //
 // Unlike gro, grw is read-WRITE: its scopes permit filter management and
 // permanent deletion, and its keyring namespace (google-readwrite/*) is
@@ -14,7 +14,7 @@ package appidentity
 import (
 	"google.golang.org/api/gmail/v1"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 )
 
 // Scopes is the OAuth scope set grw requests (Gmail only in v1):

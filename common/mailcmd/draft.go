@@ -16,7 +16,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	xhtml "golang.org/x/net/html"
 
-	gmailapi "github.com/open-cli-collective/google-cli-common/gmail"
+	gmailapi "github.com/open-cli-collective/google-cli/common/gmail"
 )
 
 func newDraftCommand() *cobra.Command {

@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 )
 
 // TestMain registers the canonical test identity up front so any keychain test

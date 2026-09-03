@@ -8,14 +8,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	config "github.com/open-cli-collective/google-cli-common/configcmd"
-	"github.com/open-cli-collective/google-cli-common/initcmd"
-	"github.com/open-cli-collective/google-cli-common/refreshcmd"
-	"github.com/open-cli-collective/google-cli-common/rootutil"
-	"github.com/open-cli-collective/google-cli-common/setcred"
-	"github.com/open-cli-collective/google-cli-common/version"
+	config "github.com/open-cli-collective/google-cli/common/configcmd"
+	"github.com/open-cli-collective/google-cli/common/initcmd"
+	"github.com/open-cli-collective/google-cli/common/refreshcmd"
+	"github.com/open-cli-collective/google-cli/common/rootutil"
+	"github.com/open-cli-collective/google-cli/common/setcred"
+	"github.com/open-cli-collective/google-cli/common/version"
 
-	"github.com/open-cli-collective/google-readwrite/internal/cmd/mail"
+	"github.com/open-cli-collective/google-cli/grw/internal/cmd/mail"
 )
 
 var (

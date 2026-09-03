@@ -7,10 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 
-	"github.com/open-cli-collective/google-readwrite/internal/appidentity"
-	"github.com/open-cli-collective/google-readwrite/internal/cmd/root"
+	"github.com/open-cli-collective/google-cli/grw/internal/appidentity"
+	"github.com/open-cli-collective/google-cli/grw/internal/cmd/root"
 )
 
 func main() {

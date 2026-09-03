@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	gmailapi "github.com/open-cli-collective/google-cli-common/gmail"
-	"github.com/open-cli-collective/google-cli-common/testutil"
+	gmailapi "github.com/open-cli-collective/google-cli/common/gmail"
+	"github.com/open-cli-collective/google-cli/common/testutil"
 )
 
 // --- Flag presence ---

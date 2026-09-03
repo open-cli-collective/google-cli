@@ -3,7 +3,7 @@ package keychain
 import (
 	"testing"
 
-	"github.com/open-cli-collective/google-cli-common/config"
+	"github.com/open-cli-collective/google-cli/common/config"
 )
 
 // resetCredRefOverride keeps the package-level --ref override clean across
