@@ -133,6 +133,8 @@ func (c *Client) setTrashed(ctx context.Context, ids []string, trashed bool) err
 	for _, id := range ids {
 		metadata := &drivev3.File{Trashed: trashed}
 		if !trashed {
+			// false is the zero value, so the generated client omits it from
+			// the JSON body unless forced; without this, restore is a no-op.
 			metadata.ForceSendFields = []string{"Trashed"}
 		}
 		if _, err := c.service.Files.Update(id, metadata).SupportsAllDrives(true).Context(ctx).Do(); err != nil {

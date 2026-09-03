@@ -7,6 +7,7 @@ import (
 
 	driveapi "github.com/open-cli-collective/google-cli/internal/api/drive"
 	drivecmd "github.com/open-cli-collective/google-cli/internal/cmd/drive"
+	mailcmd "github.com/open-cli-collective/google-cli/internal/cmd/mail"
 	driverw "github.com/open-cli-collective/google-cli/internal/rw/drive"
 )
 
@@ -27,11 +28,14 @@ var ClientFactory = func(ctx context.Context) (WriteClient, error) { return driv
 
 func newWriteClient(ctx context.Context) (WriteClient, error) { return ClientFactory(ctx) }
 
+// printFile prints a file's identity. Names come from Drive, where a
+// collaborator may have set them, so they are sanitized before reaching the
+// terminal.
 func printFile(file *driveapi.File) {
-	fmt.Printf("ID: %s\n", file.ID)
-	fmt.Printf("Name: %s\n", file.Name)
-	fmt.Printf("Type: %s\n", file.MimeType)
+	fmt.Printf("ID: %s\n", mailcmd.SanitizeOutput(file.ID))
+	fmt.Printf("Name: %s\n", mailcmd.SanitizeFilename(file.Name))
+	fmt.Printf("Type: %s\n", mailcmd.SanitizeOutput(file.MimeType))
 	if len(file.Parents) > 0 {
-		fmt.Printf("Parent: %s\n", file.Parents[0])
+		fmt.Printf("Parent: %s\n", mailcmd.SanitizeOutput(file.Parents[0]))
 	}
 }

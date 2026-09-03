@@ -8,6 +8,11 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/bulk"
 )
 
+// resolveFileIDs turns the leaf's ID source into IDs and, unless this is a
+// dry-run, a client to act on them. A client is built only when something
+// needs it: --query needs one to search, and a real run needs one to mutate.
+// A dry-run over positional or stdin IDs therefore never touches credentials,
+// and the client built for --query is reused rather than constructed twice.
 func resolveFileIDs(cmd *cobra.Command, args []string, stdin bool, query string, dryRun bool) (WriteClient, []string, error) {
 	var client WriteClient
 	ids, err := bulk.ResolveIDs(bulk.Config{Args: args, Stdin: stdin, Query: query}, func(q string) ([]string, error) {
