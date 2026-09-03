@@ -1,10 +1,59 @@
 package contacts
 
 import (
+	"reflect"
 	"testing"
 
 	"google.golang.org/api/people/v1"
 )
+
+func TestToPersonRoundTrip(t *testing.T) {
+	t.Parallel()
+	tests := map[string]*Contact{
+		"every writable field": {
+			ResourceName: "people/server", DisplayName: "Server Name", PhotoURL: "https://example.com/photo",
+			Names:         []Name{{DisplayName: "Dr Ada Lovelace", GivenName: "Ada", FamilyName: "Lovelace", MiddleName: "Byron", HonorificPrefix: "Dr", HonorificSuffix: "III", PhoneticFullName: "Ada Lovelace"}},
+			Emails:        []Email{{Value: "ada@example.com", Type: "work", DisplayName: "Ada", Primary: true}, {Value: "home@example.com", Type: "home"}},
+			Phones:        []Phone{{Value: "+1-555-0100", Type: "mobile"}},
+			Organizations: []Organization{{Name: "Analytical Engines", Title: "Programmer", Department: "Research", Type: "work"}},
+			Addresses:     []Address{{FormattedValue: "1 Engine Way", Type: "work", City: "London", Region: "London", PostalCode: "N1", Country: "UK"}},
+			URLs:          []URL{{Value: "https://example.com", Type: "profile"}}, Biography: "First programmer", Birthday: "1815-12-10",
+		},
+		"minimal": {},
+	}
+	for name, contact := range tests {
+		contact := contact
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			want := *contact
+			want.ResourceName, want.DisplayName, want.PhotoURL = "", "", ""
+			if len(want.Names) > 0 {
+				want.DisplayName = want.Names[0].DisplayName
+			}
+			if got := ParseContact(ToPerson(contact)); !reflect.DeepEqual(got, &want) {
+				t.Fatalf("round trip = %#v, want %#v", got, &want)
+			}
+		})
+	}
+}
+
+func TestPersonUpdateMask(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		contact *Contact
+		want    string
+	}{
+		{"empty", &Contact{}, ""},
+		{"selected", &Contact{Names: []Name{{GivenName: "Ada"}}, Phones: []Phone{{Value: "1"}}, Biography: "bio"}, "names,phoneNumbers,biographies"},
+		{"all", &Contact{Names: []Name{{}}, Emails: []Email{{}}, Phones: []Phone{{}}, Organizations: []Organization{{}}, Addresses: []Address{{}}, URLs: []URL{{}}, Biography: "bio", Birthday: "--12-10"}, "names,emailAddresses,phoneNumbers,organizations,addresses,urls,biographies,birthdays"},
+	}
+	for _, test := range tests {
+		if got := PersonUpdateMask(test.contact); got != test.want {
+			t.Errorf("%s: got %q, want %q", test.name, got, test.want)
+		}
+	}
+}
 
 func TestParseContact(t *testing.T) {
 	t.Parallel()

@@ -24,6 +24,7 @@ import (
 	mailcmd "github.com/open-cli-collective/google-cli/internal/cmd/mail"
 	mecmd "github.com/open-cli-collective/google-cli/internal/cmd/me"
 	rwcalendarcmd "github.com/open-cli-collective/google-cli/internal/rwcmd/calendar"
+	rwcontactscmd "github.com/open-cli-collective/google-cli/internal/rwcmd/contacts"
 	rwmailcmd "github.com/open-cli-collective/google-cli/internal/rwcmd/mail"
 )
 
@@ -48,6 +49,7 @@ type commandPair struct {
 
 var writeCommandPairs = map[string]commandPair{
 	"calendar": {read: calcmd.NewCommand, write: rwcalendarcmd.NewCommand},
+	"contacts": {read: contactscmd.NewCommand, write: rwcontactscmd.NewCommand},
 	"mail":     {read: mailcmd.NewCommand, write: rwmailcmd.NewCommand},
 }
 
@@ -526,8 +528,10 @@ func TestGrwLinksWriteCode(t *testing.T) {
 	t.Parallel()
 	want := map[string]bool{
 		modulePath + "/internal/rw/calendar":    false,
+		modulePath + "/internal/rw/contacts":    false,
 		modulePath + "/internal/rw/gmail":       false,
 		modulePath + "/internal/rwcmd/calendar": false,
+		modulePath + "/internal/rwcmd/contacts": false,
 		modulePath + "/internal/rwcmd/mail":     false,
 	}
 	for _, pkg := range goListDeps(t, "./cmd/grw") {

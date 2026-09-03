@@ -19,6 +19,7 @@ func TestScopes(t *testing.T) {
 		gmail.MailGoogleComScope,
 		calendar.CalendarReadonlyScope,
 		calendar.CalendarEventsScope,
+		people.ContactsScope,
 		people.UserinfoProfileScope,
 	}
 	if len(Scopes) != len(want) {

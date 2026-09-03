@@ -31,6 +31,7 @@ var Scopes = []string{
 	gmail.MailGoogleComScope,
 	calendar.CalendarReadonlyScope,
 	calendar.CalendarEventsScope,
+	people.ContactsScope,
 	people.UserinfoProfileScope,
 }
 
@@ -42,6 +43,7 @@ var ScopeDescriptions = map[string]string{
 	gmail.MailGoogleComScope:       "Gmail Full Access — required for permanent deletion (gated behind --permanent and a typed confirmation).",
 	calendar.CalendarReadonlyScope: "Calendar Read-Only — read calendars and events.",
 	calendar.CalendarEventsScope:   "Calendar Events — create, update, and delete events.",
+	people.ContactsScope:           "Contacts — read, create, update, and delete contacts and contact groups.",
 	people.UserinfoProfileScope:    "Basic Profile — read the authenticated user's name and email for `me`.",
 }
 

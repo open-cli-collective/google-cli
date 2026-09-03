@@ -16,6 +16,9 @@ type Client struct {
 	service *people.Service
 }
 
+// Service returns the underlying People API service for write wrappers.
+func (c *Client) Service() *people.Service { return c.service }
+
 // NewClient creates a new Contacts client with OAuth2 authentication
 func NewClient(ctx context.Context) (*Client, error) {
 	client, err := auth.GetHTTPClient(ctx)
