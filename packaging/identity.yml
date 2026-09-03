@@ -27,8 +27,8 @@ binaries:
     archives: {name_template: "grw_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"}
     packages:
       homebrew: {canonical_cask: grw, alias_casks: [google-readwrite]}
-      winget: {id: OpenCLICollective.grw, bootstrap: true}
-      chocolatey: {id: grw}
+      winget: {id: OpenCLICollective.google-readwrite, bootstrap: true}
+      chocolatey: {id: google-readwrite}
       linux: {package_name: google-readwrite}
     keychain_probe:
       env_unset: [GOOGLE_READWRITE_KEYRING_BACKEND]

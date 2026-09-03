@@ -29,20 +29,20 @@ brew install open-cli-collective/tap/google-readonly
 brew install open-cli-collective/tap/google-readwrite
 ```
 
-`gro` keeps the `google-readonly` package IDs it has always shipped under; `grw` uses its short name everywhere.
+Package registries know the tools as `google-readonly` and `google-readwrite`; the binaries are `gro` and `grw`.
 
 ### Chocolatey
 
 ```powershell
 choco install google-readonly
-choco install grw
+choco install google-readwrite
 ```
 
 ### WinGet
 
 ```powershell
 winget install OpenCLICollective.google-readonly
-winget install OpenCLICollective.grw
+winget install OpenCLICollective.google-readwrite
 ```
 
 ### Release archives
