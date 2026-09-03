@@ -38,14 +38,18 @@ https://www.googleapis.com/auth/drive.metadata
 
 These scopes support Gmail read/organization and draft creation without sending, Calendar reads plus RSVP/color, Contacts reads plus group/star changes, profile identity, and Drive reads plus star metadata. The `gro` command graph and architecture tests restrict actual behavior even where Google's scope description is broader.
 
-### Additional `grw` Gmail scopes
+### `grw`
 
 ```text
+https://www.googleapis.com/auth/gmail.modify
 https://www.googleapis.com/auth/gmail.settings.basic
 https://mail.google.com/
+https://www.googleapis.com/auth/calendar.readonly
+https://www.googleapis.com/auth/calendar.events
+https://www.googleapis.com/auth/userinfo.profile
 ```
 
-`grw` also requests `gmail.modify`, already listed above. Gmail settings access supports filters. The broad mail scope is required for permanent deletion; the command defaults to recoverable Trash and gates permanent deletion behind `--permanent --yes`.
+Gmail settings access supports filters. The broad mail scope is required for permanent deletion; the command defaults to recoverable Trash and gates permanent deletion behind `--permanent --yes`. Calendar scopes support reading and mutating events, and the profile scope supports `grw me`.
 
 ## Distribute and verify
 

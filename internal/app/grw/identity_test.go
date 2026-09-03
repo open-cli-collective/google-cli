@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/gmail/v1"
+	"google.golang.org/api/people/v1"
 )
 
 // TestScopes locks grw's OAuth scope set. Unlike gro (whose architecture test
@@ -15,6 +17,9 @@ func TestScopes(t *testing.T) {
 		gmail.GmailModifyScope,
 		gmail.GmailSettingsBasicScope,
 		gmail.MailGoogleComScope,
+		calendar.CalendarReadonlyScope,
+		calendar.CalendarEventsScope,
+		people.UserinfoProfileScope,
 	}
 	if len(Scopes) != len(want) {
 		t.Fatalf("Scopes = %v, want exactly %v", Scopes, want)

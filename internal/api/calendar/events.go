@@ -105,6 +105,42 @@ func ParseEvent(e *calendar.Event) *Event {
 	return event
 }
 
+// ToAPIEvent converts a simplified Event to the Google Calendar API type.
+func ToAPIEvent(e *Event) *calendar.Event {
+	apiEvent := &calendar.Event{
+		Id:          e.ID,
+		Summary:     e.Summary,
+		Description: e.Description,
+		Location:    e.Location,
+		Status:      e.Status,
+	}
+	if e.Start != nil {
+		apiEvent.Start = &calendar.EventDateTime{
+			DateTime: e.Start.DateTime,
+			Date:     e.Start.Date,
+			TimeZone: e.Start.TimeZone,
+		}
+	}
+	if e.End != nil {
+		apiEvent.End = &calendar.EventDateTime{
+			DateTime: e.End.DateTime,
+			Date:     e.End.Date,
+			TimeZone: e.End.TimeZone,
+		}
+	}
+	if len(e.Attendees) > 0 {
+		apiEvent.Attendees = make([]*calendar.EventAttendee, len(e.Attendees))
+		for i, attendee := range e.Attendees {
+			apiEvent.Attendees[i] = &calendar.EventAttendee{
+				Email:          attendee.Email,
+				Optional:       attendee.Optional,
+				ResponseStatus: attendee.Status,
+			}
+		}
+	}
+	return apiEvent
+}
+
 // ParseCalendar converts a Google Calendar API calendar entry to our simplified CalendarInfo
 func ParseCalendar(c *calendar.CalendarListEntry) *CalendarInfo {
 	return &CalendarInfo{

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"google.golang.org/api/calendar/v3"
 
 	"github.com/open-cli-collective/google-cli/internal/testutil"
@@ -240,4 +241,26 @@ func TestWeekCommand_Success(t *testing.T) {
 		// Should show events
 		testutil.Contains(t, output, "Test Meeting")
 	})
+}
+
+func TestEventListCommands_IDsOnly(t *testing.T) {
+	commands := map[string]func() *cobra.Command{
+		"events": newEventsCommand,
+		"today":  newTodayCommand,
+		"week":   newWeekCommand,
+	}
+	for name, newCommand := range commands {
+		name, newCommand := name, newCommand
+		t.Run(name, func(t *testing.T) {
+			mock := &MockCalendarClient{ListEventsFunc: func(_ context.Context, _, _, _ string, _ int64) ([]*calendar.Event, error) {
+				return []*calendar.Event{testutil.SampleEvent("one"), testutil.SampleEvent("two")}, nil
+			}}
+			cmd := newCommand()
+			cmd.SetArgs([]string{"--ids"})
+			withMockClient(mock, func() {
+				output := testutil.CaptureStdout(t, func() { testutil.NoError(t, cmd.Execute()) })
+				testutil.Equal(t, output, "one\ntwo\n")
+			})
+		})
+	}
 }

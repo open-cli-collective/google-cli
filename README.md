@@ -3,9 +3,9 @@
 This repository builds two Google command-line tools from one Go module:
 
 - `gro` reads and organizes Gmail, Calendar, Contacts, and Drive data without exposing destructive operations.
-- `grw` is the read-write Gmail tool. Its mail command tree is a strict superset of `gro mail`, adding delete and restore, folder management, and filters.
+- `grw` is the read-write Google tool. Its mail and calendar command trees extend `gro` with delete and restore, folder management, filters, and calendar event creation, updates, and deletion.
 
-Both tools use the same configuration and keyring machinery, but register separate identities. Their configuration, tokens, environment variables, and keyring entries do not collide. `gro` requests only the scopes needed for its non-destructive surface; `grw` adds Gmail settings and permanent-delete access.
+Both tools use the same configuration and keyring machinery, but register separate identities. Their configuration, tokens, environment variables, and keyring entries do not collide. `gro` requests only the scopes needed for its non-destructive surface; `grw` adds Gmail settings, permanent-delete access, and Calendar event writes.
 
 ## Safety model
 
@@ -59,6 +59,7 @@ gro calendar today
 
 grw init
 grw mail delete --query "older_than:1y" --dry-run
+grw calendar create --summary "Planning" --start 2026-10-01 --dry-run
 ```
 
 One desktop OAuth client can be used by both tools, but each tool asks for consent and stores its token under its own identity. Google Workspace administrators should start with [`WORKSPACE_ADMINS.md`](WORKSPACE_ADMINS.md).

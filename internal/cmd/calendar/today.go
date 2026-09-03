@@ -10,6 +10,7 @@ import (
 func newTodayCommand() *cobra.Command {
 	var (
 		calendarID string
+		idsOnly    bool
 	)
 
 	cmd := &cobra.Command{
@@ -39,11 +40,13 @@ Examples:
 				MaxResults:   50,
 				Header:       fmt.Sprintf("Today's events (%s):", now.Format("Mon, Jan 2, 2006")),
 				EmptyMessage: "No events today.",
+				IDsOnly:      idsOnly,
 			})
 		},
 	}
 
 	cmd.Flags().StringVarP(&calendarID, "calendar", "c", "primary", "Calendar ID to query")
+	cmd.Flags().BoolVar(&idsOnly, "ids", false, "Output only event IDs (one per line, for piping)")
 
 	return cmd
 }
