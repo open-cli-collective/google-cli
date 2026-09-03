@@ -1,0 +1,53 @@
+package calendar
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+
+	"github.com/open-cli-collective/google-cli/internal/api/calendar"
+)
+
+func newListCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all calendars",
+		Long: `List all calendars the user has access to.
+
+Shows primary calendar, shared calendars, and subscribed calendars.
+
+Examples:
+  gro calendar list`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, err := newCalendarClient(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("creating Calendar client: %w", err)
+			}
+
+			calendars, err := client.ListCalendars(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("listing calendars: %w", err)
+			}
+
+			if len(calendars) == 0 {
+				fmt.Println("No calendars found.")
+				return nil
+			}
+
+			calInfos := make([]*calendar.CalendarInfo, len(calendars))
+			for i, c := range calendars {
+				calInfos[i] = calendar.ParseCalendar(c)
+			}
+
+			fmt.Printf("Found %d calendar(s):\n\n", len(calendars))
+			for _, cal := range calInfos {
+				printCalendar(cal)
+			}
+
+			return nil
+		},
+	}
+
+	return cmd
+}
