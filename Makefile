@@ -2,17 +2,17 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS := -ldflags "-s -w \
-	-X github.com/open-cli-collective/google-cli/common/version.Version=$(VERSION) \
-	-X github.com/open-cli-collective/google-cli/common/version.Commit=$(COMMIT) \
-	-X github.com/open-cli-collective/google-cli/common/version.Date=$(DATE)"
+	-X github.com/open-cli-collective/google-cli/internal/version.Version=$(VERSION) \
+	-X github.com/open-cli-collective/google-cli/internal/version.Commit=$(COMMIT) \
+	-X github.com/open-cli-collective/google-cli/internal/version.Date=$(DATE)"
 
 export GOFLAGS := -tags=keyring_no1password,keyring_nopassage
 
 .PHONY: build test test-cover test-cover-check lint fmt tidy check install
 
 build:
-	go build $(LDFLAGS) -o bin/gro ./gro/cmd/gro
-	go build $(LDFLAGS) -o bin/grw ./grw/cmd/grw
+	go build $(LDFLAGS) -o bin/gro ./cmd/gro
+	go build $(LDFLAGS) -o bin/grw ./cmd/grw
 
 test:
 	go test -race ./...

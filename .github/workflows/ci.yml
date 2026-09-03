@@ -86,11 +86,11 @@ jobs:
               goos="${target%/*}"
               goarch="${target#*/}"
               CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-                go build -o "$RUNNER_TEMP/$bin-$goos-$goarch" "./$bin/cmd/$bin"
+                go build -o "$RUNNER_TEMP/$bin-$goos-$goarch" "./cmd/$bin"
             done
 
             for goarch in amd64 arm64; do
-              deps=$(CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go list -deps "./$bin/cmd/$bin")
+              deps=$(CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go list -deps "./cmd/$bin")
               if printf '%s\n' "$deps" | grep -E '^(github.com/byteness/keyring|github.com/1password/onepassword-sdk-go)(/|$)'; then
                 echo "static Linux $bin $goarch build graph must not include byteness/keyring or onepassword-sdk-go"
                 exit 1
