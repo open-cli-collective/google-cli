@@ -1,0 +1,49 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - errorlint
+    - exhaustive
+    - govet
+    - gosec
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      exclude-functions:
+        - io.Closer.Close
+        - (*net/http.Response).Body.Close
+        - (net/http.ResponseWriter).Write
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+      - linters:
+          - errcheck
+        source: "defer.*\\.Close\\(\\)"
+      # Stuttering names (e.g., mail.MailClient) are accepted for clarity at call sites
+      - linters:
+          - revive
+        text: "stutters"
+      # Standard library package name conflicts are intentional (e.g., calendar, contacts)
+      - linters:
+          - revive
+        text: "avoid package names that conflict"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/open-cli-collective/google-cli-common
+
+run:
+  timeout: 5m
