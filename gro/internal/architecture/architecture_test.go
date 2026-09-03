@@ -35,8 +35,9 @@ func domainCommands() map[string]*cobra.Command {
 	}
 }
 
-// findModuleRoot locates the module root and returns gro's source root.
-func findModuleRoot(t *testing.T) string {
+// groSourceRoot walks up to the module root (go.mod) and returns gro's
+// source tree beneath it.
+func groSourceRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
 	if err != nil {
@@ -104,7 +105,7 @@ func leafCommands(cmd *cobra.Command, parentPath string) []leafInfo {
 // declares an exported interface type whose name ends in "Client".
 func TestDomainPackagesDefineClientInterface(t *testing.T) {
 	t.Parallel()
-	root := findModuleRoot(t)
+	root := groSourceRoot(t)
 
 	for _, pkg := range domainPackages {
 		t.Run(pkg, func(t *testing.T) {
@@ -146,7 +147,7 @@ func TestDomainPackagesDefineClientInterface(t *testing.T) {
 // declares a package-level ClientFactory variable for dependency injection.
 func TestDomainPackagesHaveClientFactory(t *testing.T) {
 	t.Parallel()
-	root := findModuleRoot(t)
+	root := groSourceRoot(t)
 
 	for _, pkg := range domainPackages {
 		t.Run(pkg, func(t *testing.T) {
@@ -186,7 +187,7 @@ func TestDomainPackagesHaveClientFactory(t *testing.T) {
 // exports a NewCommand() function (top-level, not a method).
 func TestDomainPackagesExportNewCommand(t *testing.T) {
 	t.Parallel()
-	root := findModuleRoot(t)
+	root := groSourceRoot(t)
 
 	for _, pkg := range domainPackages {
 		t.Run(pkg, func(t *testing.T) {
@@ -301,24 +302,44 @@ func TestAllScopesAreNonDestructive(t *testing.T) {
 	}
 }
 
-// TestNoDestructiveAPIMethodsInProductionCode scans all non-test Go source files
-// for Google API destructive method calls. Non-destructive modify methods like
-// BatchModify (used for labeling/archiving) are permitted.
+// forbiddenAPIPatterns are the Google API client method calls gro must never
+// make. They are specific to the Google client libraries and unlikely to
+// appear in other contexts; generic names like .Delete() or .Insert() are
+// intentionally excluded to avoid false positives. .BatchModify( is allowed —
+// it backs bulk label/archive operations.
+var forbiddenAPIPatterns = []string{
+	".Send(",
+	".Trash(",
+	".Untrash(",
+	".BatchDelete(",
+}
+
+// TestNoDestructiveAPIMethodsInProductionCode scans gro's non-test Go source
+// files for destructive Google API method calls.
 func TestNoDestructiveAPIMethodsInProductionCode(t *testing.T) {
 	t.Parallel()
-	root := findModuleRoot(t)
+	scanForForbiddenAPIMethods(t, groSourceRoot(t))
+}
 
-	// These patterns are specific to Google API client libraries and unlikely
-	// to appear in other contexts. Generic method names like .Delete() or
-	// .Insert() are intentionally excluded to avoid false positives.
-	// Note: .BatchModify( is intentionally allowed — it's used for bulk label operations.
-	forbiddenPatterns := []string{
-		".Send(",
-		".Trash(",
-		".Untrash(",
-		".BatchDelete(",
+// sharedClientPackages are the Google API client packages gro links. The
+// destructive Gmail surface belongs to grw's own client, never to these.
+var sharedClientPackages = []string{"gmail", "calendar", "contacts", "drive", "people"}
+
+// TestSharedGoogleClientsAreNonDestructive extends the scan to the shared API
+// client packages, so a destructive method added there (e.g. via a shared
+// batch helper) fails gro's build instead of silently shipping.
+func TestSharedGoogleClientsAreNonDestructive(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	for _, pkg := range sharedClientPackages {
+		scanForForbiddenAPIMethods(t, filepath.Join(root, "common", pkg))
 	}
+}
 
+// scanForForbiddenAPIMethods walks root and reports every non-test Go file
+// containing one of forbiddenAPIPatterns.
+func scanForForbiddenAPIMethods(t *testing.T, root string) {
+	t.Helper()
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -334,7 +355,7 @@ func TestNoDestructiveAPIMethodsInProductionCode(t *testing.T) {
 			return nil
 		}
 
-		data, readErr := os.ReadFile(path)
+		data, readErr := os.ReadFile(path) //nolint:gosec // repo-local test input
 		if readErr != nil {
 			t.Errorf("reading %s: %v", path, readErr)
 			return nil
@@ -342,7 +363,7 @@ func TestNoDestructiveAPIMethodsInProductionCode(t *testing.T) {
 		content := string(data)
 		rel, _ := filepath.Rel(root, path)
 
-		for _, pattern := range forbiddenPatterns {
+		for _, pattern := range forbiddenAPIPatterns {
 			if strings.Contains(content, pattern) {
 				t.Errorf("file %s contains forbidden destructive API method %q — this CLI only allows non-destructive operations", rel, pattern)
 			}
@@ -350,6 +371,6 @@ func TestNoDestructiveAPIMethodsInProductionCode(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walking source tree: %v", err)
+		t.Fatalf("walking source tree %s: %v", root, err)
 	}
 }

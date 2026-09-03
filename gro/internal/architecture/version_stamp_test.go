@@ -7,7 +7,11 @@ import (
 	"testing"
 )
 
-// versionPkg is the package whose ldflags -X stamps set gro's version.
+// versionPkg is the package whose ldflags -X stamps set gro's version. Go
+// silently ignores -X against a package the binary doesn't contain, so when
+// this package once moved without the ldflags following it, every release
+// shipped reporting "gro dev (commit: unknown, built: unknown)". If it moves
+// again, this test fails until the ldflags move with it.
 const versionPkg = "github.com/open-cli-collective/google-cli/common/version"
 
 // ldflagXRe matches an ldflags -X target's package path (the part before the
