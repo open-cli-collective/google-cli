@@ -2,7 +2,6 @@ package contacts
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 
 	"google.golang.org/api/people/v1"
@@ -47,7 +46,7 @@ func TestPersonUpdateMask(t *testing.T) {
 	}{
 		{"empty", &Contact{}, ""},
 		{"selected", &Contact{Names: []Name{{GivenName: "Ada"}}, Phones: []Phone{{Value: "1"}}, Biography: "bio"}, "names,phoneNumbers,biographies"},
-		{"all", &Contact{Names: []Name{{}}, Emails: []Email{{}}, Phones: []Phone{{}}, Organizations: []Organization{{}}, Addresses: []Address{{}}, URLs: []URL{{}}, Biography: "bio", Birthday: "--12-10"}, strings.Join(updatePersonFields, ",")},
+		{"all", &Contact{Names: []Name{{}}, Emails: []Email{{}}, Phones: []Phone{{}}, Organizations: []Organization{{}}, Addresses: []Address{{}}, URLs: []URL{{}}, Biography: "bio", Birthday: "--12-10"}, "names,emailAddresses,phoneNumbers,organizations,addresses,urls,biographies,birthdays"},
 	}
 	for _, test := range tests {
 		if got := PersonUpdateMask(test.contact); got != test.want {
