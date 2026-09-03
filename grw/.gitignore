@@ -1,0 +1,22 @@
+# Binary
+/gro
+bin/
+
+# Build output
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Test coverage
+coverage.out
+coverage.html
+*.out
+
+# Editor/tool local state
+.twapp-*.json
