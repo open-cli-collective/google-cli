@@ -1,0 +1,619 @@
+# Integration Tests
+
+Comprehensive integration test suite for gro. Tests are designed to work against any active Gmail account with standard inbox content.
+
+## Test Environment Setup
+
+### Prerequisites
+- OAuth client JSON present (`~/.config/google-readonly/oauth_client.json`; deployment material, not a secret)
+- OAuth token authenticated (stored only in the OS keyring via `cli-common/credstore`; no `token.json` fallback)
+- Access to a Gmail account with:
+  - At least some messages in the inbox
+  - At least one email with attachments (for attachment tests)
+  - At least one email thread with multiple messages
+- Access to Google Calendar with:
+  - At least one calendar
+  - At least one upcoming event
+- Access to Google Contacts with:
+  - At least some contacts
+  - At least one contact group (optional)
+
+### Verification
+```bash
+ls ~/.config/google-readonly/oauth_client.json
+gro config show  # Check configuration status (backend, ref, token presence, client-JSON fingerprint)
+gro mail search "is:inbox" --max 1  # Quick connectivity check
+```
+
+---
+
+## Version Command
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Print version | `gro --version` | Shows "gro <version>" |
+
+---
+
+## Config Commands
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Show config | `gro config show` | Shows credentials and token status |
+| Test connectivity | `gro config test` | Shows "Successfully connected to Gmail API" |
+| Clear token | `gro config clear` | Removes stored OAuth token |
+
+---
+
+## Search Operations
+
+### Basic Search
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Search inbox | `gro mail search "is:inbox" --max 5` | Returns messages with ID, ThreadID, From, Subject, Date, Snippet |
+| Search with default limit | `gro mail search "is:inbox"` | Returns up to 10 messages (default) |
+| Custom result limit | `gro mail search "is:inbox" --max 3` | Returns exactly 3 messages |
+| JSON output | `gro mail search "is:inbox" --max 2 --json` | Valid JSON array with message objects |
+| No results | `gro mail search "xyznonexistent12345uniquequery67890"` | "No messages found." |
+| Search unread | `gro mail search "is:unread" --max 5` | Returns unread messages (if any) |
+| Search starred | `gro mail search "is:starred" --max 5` | Returns starred messages (if any) |
+
+### Query Operators
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| From filter | `gro mail search "from:noreply" --max 3` | Messages from addresses containing "noreply" |
+| Subject filter | `gro mail search "subject:welcome" --max 3` | Messages with "welcome" in subject |
+| Has attachment | `gro mail search "has:attachment" --max 3` | Messages with attachments |
+| Date range | `gro mail search "after:2024/01/01" --max 3` | Messages after date |
+| Combined query | `gro mail search "is:inbox has:attachment" --max 3` | Inbox messages with attachments |
+| Label filter | `gro mail search "label:inbox" --max 3` | Messages in inbox |
+
+### Attachment Size and Type Search
+
+Use graduated size thresholds to find attachments in inboxes of varying sizes.
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Larger than 10M | `gro mail search "has:attachment larger:10M" --max 3` | Large attachments (if any) |
+| Larger than 5M | `gro mail search "has:attachment larger:5M" --max 3` | Medium-large attachments (if any) |
+| Larger than 1M | `gro mail search "has:attachment larger:1M" --max 3` | Medium attachments (if any) |
+| Larger than 500K | `gro mail search "has:attachment larger:500K" --max 3` | Small-medium attachments (if any) |
+| Larger than 100K | `gro mail search "has:attachment larger:100K" --max 3` | Small attachments (if any) |
+| Smaller than 1M | `gro mail search "has:attachment smaller:1M" --max 3` | Small attachments |
+| PDF attachments | `gro mail search "filename:pdf" --max 3` | Messages with PDF files |
+| Excel attachments | `gro mail search "filename:xlsx" --max 3` | Messages with Excel files |
+| Zip attachments | `gro mail search "filename:zip" --max 3` | Messages with ZIP files |
+| Combined size and type | `gro mail search "has:attachment filename:pdf larger:100K" --max 3` | PDFs over 100KB |
+
+### JSON Validation
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| JSON has required fields | `gro mail search "is:inbox" --max 1 --json \| jq '.[0] \| keys'` | Contains: id, threadId, from, subject, date, snippet |
+| JSON ID is string | `gro mail search "is:inbox" --max 1 --json \| jq -e '.[0].id \| type == "string"'` | Returns true |
+| JSON ThreadID present | `gro mail search "is:inbox" --max 1 --json \| jq -e '.[0].threadId != null'` | Returns true |
+
+---
+
+## Read Operations
+
+### Read Single Message
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Read by ID | `MSG_ID=$(gro mail search "is:inbox" --max 1 --json \| jq -r '.[0].id'); gro mail read "$MSG_ID"` | Shows ID, From, To, Subject, Date, Body |
+| Read JSON output | `MSG_ID=$(gro mail search "is:inbox" --max 1 --json \| jq -r '.[0].id'); gro mail read "$MSG_ID" --json` | Valid JSON with body content |
+| Non-existent message | `gro mail read "0000000000000000"` | Error: 404 or "not found" |
+| Invalid message ID | `gro mail read "invalid-id-format"` | Error message |
+
+### Read Content Verification
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Body included | `MSG_ID=$(gro mail search "is:inbox" --max 1 --json \| jq -r '.[0].id'); gro mail read "$MSG_ID" --json \| jq -e '.body != null'` | Returns true |
+| Headers present | `MSG_ID=$(gro mail search "is:inbox" --max 1 --json \| jq -r '.[0].id'); gro mail read "$MSG_ID"` | Output contains "From:", "To:", "Subject:", "Date:" |
+
+---
+
+## Thread Operations
+
+### Thread by Thread ID
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| View thread | `THREAD_ID=$(gro mail search "is:inbox" --max 1 --json \| jq -r '.[0].threadId'); gro mail thread "$THREAD_ID"` | Shows "Thread contains N message(s)" and all messages |
+| Thread JSON | `THREAD_ID=$(gro mail search "is:inbox" --max 1 --json \| jq -r '.[0].threadId'); gro mail thread "$THREAD_ID" --json` | Valid JSON array of messages |
+
+### Thread by Message ID
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Thread from message ID | `MSG_ID=$(gro mail search "is:inbox" --max 1 --json \| jq -r '.[0].id'); gro mail thread "$MSG_ID"` | Shows thread containing that message |
+| Thread message count | `MSG_ID=$(gro mail search "is:inbox" --max 1 --json \| jq -r '.[0].id'); gro mail thread "$MSG_ID" --json \| jq 'length >= 1'` | Returns true (at least 1 message) |
+
+### Error Cases
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Non-existent thread | `gro mail thread "0000000000000000"` | Error: 404 or "not found" |
+
+---
+
+## Labels Operations
+
+### List Labels
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| List all labels | `gro mail labels` | Shows NAME, TYPE, TOTAL, UNREAD columns |
+| Labels JSON output | `gro mail labels --json` | Valid JSON array with label objects |
+| Labels JSON has fields | `gro mail labels --json \| jq -e '.[0] \| has("id", "name", "type")'` | Returns true |
+
+### Label Display in Messages
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Search shows labels | `gro mail search "is:inbox" --max 1` | Output may include "Labels:" line if message has user labels |
+| Search shows categories | `gro mail search "category:updates" --max 1` | Output may include "Categories: updates" |
+| Search JSON has labels | `gro mail search "is:inbox" --max 1 --json \| jq '.[0] \| has("labels", "categories")'` | Returns true |
+| Read shows labels | `MSG_ID=$(gro mail search "is:inbox" --max 1 --json \| jq -r '.[0].id'); gro mail read "$MSG_ID"` | Output may include "Labels:" and "Categories:" lines |
+
+### Label-Based Search
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Search by label | `gro mail search "label:inbox" --max 3` | Returns inbox messages |
+| Search by category | `gro mail search "category:updates" --max 3` | Returns updates category messages |
+| Exclude category | `gro mail search "is:inbox -category:promotions" --max 3` | Returns inbox excluding promotions |
+| Combined label search | `gro mail search "is:inbox -category:social -category:promotions" --max 3` | Inbox excluding social and promotions |
+
+---
+
+## Attachment Operations
+
+### Setup: Find Message with Attachments
+```bash
+# Store a message ID with attachments for subsequent tests
+ATTACHMENT_MSG_ID=$(gro mail search "has:attachment" --max 1 --json | jq -r '.[0].id')
+```
+
+### List Attachments
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| List attachments | `gro mail attachments list "$ATTACHMENT_MSG_ID"` | Shows filename, type, size for each attachment |
+| List JSON | `gro mail attachments list "$ATTACHMENT_MSG_ID" --json` | Valid JSON array with attachment metadata |
+| No attachments | `MSG_ID=$(gro mail search "is:inbox -has:attachment" --max 1 --json \| jq -r '.[0].id'); gro mail attachments list "$MSG_ID"` | "No attachments found for message." |
+
+### JSON Validation
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Attachment has filename | `gro mail attachments list "$ATTACHMENT_MSG_ID" --json \| jq -e '.[0].filename != null'` | Returns true |
+| Attachment has mimeType | `gro mail attachments list "$ATTACHMENT_MSG_ID" --json \| jq -e '.[0].mimeType != null'` | Returns true |
+| Attachment has size | `gro mail attachments list "$ATTACHMENT_MSG_ID" --json \| jq -e '.[0].size >= 0'` | Returns true |
+
+### Download Attachments
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Download all (no flag) | `gro mail attachments download "$ATTACHMENT_MSG_ID"` | Error: "must specify --filename or --all" |
+| Download all | `gro mail attachments download "$ATTACHMENT_MSG_ID" --all -o /tmp/gro-test` | Downloads all attachments, shows "Downloaded: ..." |
+| Download specific file | `FILENAME=$(gro mail attachments list "$ATTACHMENT_MSG_ID" --json \| jq -r '.[0].filename'); gro mail attachments download "$ATTACHMENT_MSG_ID" -f "$FILENAME" -o /tmp/gro-test` | Downloads specific file |
+| Non-existent filename | `gro mail attachments download "$ATTACHMENT_MSG_ID" -f "nonexistent-file-12345.xyz"` | Error: "attachment not found" |
+| Verify file created | `ls /tmp/gro-test/` | Downloaded files exist |
+| Verify file size > 0 | `stat -f%z /tmp/gro-test/* \| head -1` (macOS) | Non-zero file size |
+
+### Zip Extraction (if zip attachment available)
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Find zip attachment | `ZIP_MSG_ID=$(gro mail search "has:attachment filename:zip" --max 1 --json \| jq -r '.[0].id')` | Message ID or null |
+| Download and extract | `gro mail attachments download "$ZIP_MSG_ID" -f "*.zip" --extract -o /tmp/gro-zip-test` | Extracts to directory |
+| Verify extraction | `ls /tmp/gro-zip-test/*/` | Extracted files present |
+
+---
+
+## Calendar Operations
+
+### List Calendars
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| List all calendars | `gro calendar list` | Shows calendars with ID, Name, Access role |
+| List JSON | `gro cal list --json` | Valid JSON array with calendar objects |
+| JSON has required fields | `gro cal list --json \| jq -e '.[0] \| has("id", "summary", "accessRole")'` | Returns true |
+
+### List Events
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| List upcoming events | `gro calendar events` | Shows events with ID, Summary, When |
+| List with max | `gro cal events --max 5` | Returns up to 5 events |
+| List with date range | `gro cal events --from 2026-01-01 --to 2026-12-31` | Events in date range |
+| List JSON | `gro cal events --json` | Valid JSON array with event objects |
+| JSON has required fields | `gro cal events --json \| jq -e '.[0] \| has("id", "summary", "start")'` | Returns true |
+
+### Get Event
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Get event by ID | `EVENT_ID=$(gro cal events --max 1 --json \| jq -r '.[0].id'); gro cal get "$EVENT_ID"` | Shows full event details |
+| Get event JSON | `EVENT_ID=$(gro cal events --max 1 --json \| jq -r '.[0].id'); gro cal get "$EVENT_ID" --json` | Valid JSON with event details |
+
+### Today and Week
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Today's events | `gro calendar today` | Shows today's events (if any) |
+| Today JSON | `gro cal today --json` | Valid JSON array |
+| This week's events | `gro calendar week` | Shows this week's events |
+| Week JSON | `gro cal week --json` | Valid JSON array |
+
+### Alias Support
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Cal alias for list | `gro cal list` | Same as `gro calendar list` |
+| Cal alias for events | `gro cal events` | Same as `gro calendar events` |
+| Cal alias for today | `gro cal today` | Same as `gro calendar today` |
+
+---
+
+## Contacts Operations
+
+### List Contacts
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| List all contacts | `gro contacts list` | Shows contacts with ID, Name, Email, Phone |
+| List with max | `gro ppl list --max 5` | Returns up to 5 contacts |
+| List JSON | `gro contacts list --json` | Valid JSON array with contact objects |
+| JSON has required fields | `gro ppl list --json \| jq -e '.[0] \| has("resourceName", "displayName")'` | Returns true |
+
+### Search Contacts
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Search by name | `gro contacts search "John"` | Contacts matching "John" |
+| Search by email | `gro ppl search "@gmail.com" --max 5` | Contacts with Gmail addresses |
+| Search JSON | `gro contacts search "test" --json` | Valid JSON array with contacts |
+| No results | `gro ppl search "xyznonexistent12345uniquequery67890"` | "No contacts found matching..." |
+
+### Get Contact Details
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Get contact by ID | `CONTACT_ID=$(gro ppl list --max 1 --json \| jq -r '.[0].resourceName'); gro contacts get "$CONTACT_ID"` | Shows full contact details |
+| Get contact JSON | `CONTACT_ID=$(gro ppl list --max 1 --json \| jq -r '.[0].resourceName'); gro ppl get "$CONTACT_ID" --json` | Valid JSON with all contact fields |
+
+### List Contact Groups
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| List all groups | `gro contacts groups` | Shows groups with ID, Name, Member count |
+| Groups JSON | `gro ppl groups --json` | Valid JSON array with group objects |
+| JSON has required fields | `gro contacts groups --json \| jq -e '.[0] \| has("resourceName", "name", "memberCount")'` | Returns true |
+
+### Alias Support
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Ppl alias for list | `gro ppl list` | Same as `gro contacts list` |
+| Ppl alias for search | `gro ppl search "test"` | Same as `gro contacts search` |
+| Ppl alias for get | `gro ppl get <id>` | Same as `gro contacts get` |
+| Ppl alias for groups | `gro ppl groups` | Same as `gro contacts groups` |
+
+---
+
+## Error Handling
+
+| Test Case | Command | Expected Result |
+|-----------|---------|-----------------|
+| Missing required arg (search) | `gro mail search` | Error: accepts 1 arg(s), received 0 |
+| Missing required arg (calendar get) | `gro calendar get` | Error: accepts 1 arg(s), received 0 |
+| Missing required arg (contacts search) | `gro contacts search` | Error: accepts 1 arg(s), received 0 |
+| Missing required arg (contacts get) | `gro contacts get` | Error: accepts 1 arg(s), received 0 |
+| Missing required arg (read) | `gro mail read` | Error: accepts 1 arg(s), received 0 |
+| Missing required arg (thread) | `gro mail thread` | Error: accepts 1 arg(s), received 0 |
+| Missing required arg (attachments list) | `gro mail attachments list` | Error: accepts 1 arg(s), received 0 |
+| Invalid subcommand | `gro invalid` | Error: unknown command |
+| Help flag | `gro --help` | Shows usage information |
+| Mail help | `gro mail --help` | Shows mail-specific help |
+| Search help | `gro mail search --help` | Shows search-specific help |
+
+---
+
+## Output Format Consistency
+
+### Text Output Structure
+
+| Command Type | Expected Fields |
+|--------------|-----------------|
+| Search | ID, ThreadID, From, Subject, Date, Labels (if any), Categories (if any), Snippet, separator (---) |
+| Read | ID, From, To, Subject, Date, Labels (if any), Categories (if any), "--- Body ---", body content |
+| Thread | "Thread contains N message(s)", per-message: "=== Message X of Y ===", ID, From, To, Subject, Date, Labels, Categories, body |
+| Labels | NAME, TYPE, TOTAL, UNREAD columns |
+| Attachments List | "Found N attachment(s):", numbered list with filename, Type, Size |
+
+### JSON Schema Validation
+
+| Type | Required Fields |
+|------|-----------------|
+| Search result | id, threadId, from, subject, date, snippet, labels, categories |
+| Message | id, threadId, from, to, subject, date, body, labels, categories |
+| Attachment | filename, mimeType, size, partId |
+| Label | id, name, type, messagesTotal, messagesUnread |
+
+---
+
+## End-to-End Workflows
+
+### Workflow 1: Search -> Read -> Thread
+```bash
+# 1. Search for a message
+MSG_ID=$(gro mail search "is:inbox" --max 1 --json | jq -r '.[0].id')
+
+# 2. Read the full message
+gro mail read "$MSG_ID"
+
+# 3. View the full thread
+gro mail thread "$MSG_ID"
+```
+
+### Workflow 2: Find and Download Attachments
+```bash
+# 1. Find message with attachments
+ATTACHMENT_MSG_ID=$(gro mail search "has:attachment" --max 1 --json | jq -r '.[0].id')
+
+# 2. List attachments
+gro mail attachments list "$ATTACHMENT_MSG_ID"
+
+# 3. Download all attachments
+gro mail attachments download "$ATTACHMENT_MSG_ID" --all -o /tmp/gro-attachments
+
+# 4. Verify downloads
+ls -la /tmp/gro-attachments/
+```
+
+### Workflow 3: JSON Pipeline
+```bash
+# Extract all From addresses from recent inbox messages
+gro mail search "is:inbox" --max 10 --json | jq -r '.[].from'
+
+# Get message bodies from a thread
+THREAD_ID=$(gro mail search "is:inbox" --max 1 --json | jq -r '.[0].threadId')
+gro mail thread "$THREAD_ID" --json | jq -r '.[].body'
+```
+
+---
+
+## Test Execution Checklist
+
+### Setup
+- [ ] Build latest: `make build`
+- [ ] Verify the OAuth client JSON exists: `ls ~/.config/google-readonly/oauth_client.json`
+- [ ] Quick connectivity test: `gro mail search "is:inbox" --max 1`
+
+### Core Commands
+- [ ] `gro --version`
+- [ ] `gro config show`
+- [ ] `gro config test`
+- [ ] `gro mail search` with various queries
+- [ ] `gro mail read` by message ID
+- [ ] `gro mail thread` by thread ID
+- [ ] `gro mail thread` by message ID
+- [ ] `gro mail labels` (list all labels)
+
+### Labels
+- [ ] `gro mail labels` text output
+- [ ] `gro mail labels --json` JSON output
+- [ ] Search by label/category
+- [ ] Labels/categories in message output
+
+### Attachments
+- [ ] `gro mail attachments list`
+- [ ] `gro mail attachments download --all`
+- [ ] `gro mail attachments download --filename`
+- [ ] Zip extraction with `--extract`
+
+### Attachment Size and Type Search
+- [ ] `larger:` with graduated sizes (10M, 5M, 1M, 500K, 100K)
+- [ ] `smaller:` filter
+- [ ] `filename:` with pdf, xlsx, zip
+- [ ] Combined `filename:` + `larger:` search
+
+### Calendar
+- [ ] `gro calendar list` shows calendars
+- [ ] `gro cal events` lists events
+- [ ] `gro cal today` shows today's events
+- [ ] `gro cal week` shows this week's events
+- [ ] `gro cal get <id>` gets event details
+- [ ] Calendar alias works (`gro cal` = `gro calendar`)
+
+### Contacts
+- [ ] `gro contacts list` shows contacts
+- [ ] `gro ppl search "query"` searches contacts
+- [ ] `gro contacts get <id>` gets contact details
+- [ ] `gro ppl groups` lists contact groups
+- [ ] Contacts alias works (`gro ppl` = `gro contacts`)
+
+### Output Formats
+- [ ] Text output for all commands
+- [ ] JSON output for all commands
+- [ ] JSON validates with jq
+
+### Error Handling
+- [ ] Missing arguments
+- [ ] Invalid IDs
+- [ ] Non-existent resources
+
+### Cleanup
+- [ ] Remove test downloads: `rm -rf /tmp/gro-test /tmp/gro-zip-test /tmp/gro-attachments`
+
+---
+
+## Draft Composition (`gro mail draft`)
+
+These scenarios exercise the full path: flag parsing → MIME assembly → Gmail API `users.drafts.create` → draft visible in Gmail Drafts UI. Each test creates a draft addressed to the authenticated user; verification is by visual inspection in Gmail and by inspecting CLI stdout/exit code.
+
+**Setup:**
+```bash
+make build
+ME="you@example.com"   # set to the authenticated Google account
+echo "user under test: $ME"
+```
+
+**Cleanup (after running):** Open Gmail → Drafts → select all `T*` drafts → Discard.
+
+### Happy Paths
+
+| # | Test Case | Command | Expected Result |
+|---|-----------|---------|-----------------|
+| T1 | Plain text body | `./bin/gro mail draft --to "$ME" --subject "T1 plain" --body "hello from gro" --plain` | Exit 0. Stdout: `Draft created: r-...`. Gmail Drafts shows plain-text body, no HTML conversion. |
+| T2 | Markdown rendered to HTML (default) | See setup block below for T2 (the markdown table in the body needs a real heredoc, not inline bash quoting). | Gmail Drafts shows real H1 heading, bold/italic text, bullet list, and 2-column table — rendered, not raw markdown. |
+| T3 | Raw HTML body | `./bin/gro mail draft --to "$ME" --subject "T3 html" --body '<h1 style="color:tomato">Tomato</h1><p>Inline <span style="background:yellow">highlight</span>.</p>' --html` | Gmail Drafts shows tomato-colored heading and yellow highlight. Confirms raw HTML is not double-processed. |
+| T4 | Body from stdin (agentic flow) | `echo $'## Status\n\n- [x] done\n- [ ] todo' \| ./bin/gro mail draft --to "$ME" --subject "T4 stdin" --stdin` | Gmail Drafts shows H2 + task list with checkboxes (TaskList extension). |
+| T5 | Body from file | (see T5 setup below) | Gmail Drafts renders headings + strikethrough + numbered list. |
+| T6 | Multiple recipients (To/Cc/Bcc) | `./bin/gro mail draft --to "$ME, ${ME%@*}+to2@${ME#*@}" --cc "${ME%@*}+cc@${ME#*@}" --bcc "${ME%@*}+bcc@${ME#*@}" --subject "T6 recipients" --body "x" --plain` | Gmail Drafts shows all four addresses populated. Plus-addressing routes to same inbox but Gmail records them distinctly. |
+| T7 | Single attachment | (see T7 setup below) | Stdout: `Attachments: 1`, `- gro-t7.txt`. Gmail Drafts has paperclip; attachment downloadable with original content. |
+| T8 | Multiple attachments, mixed types | (see T8 setup below) | Stdout: `Attachments: 2`. Gmail previews CSV inline; both files downloadable. |
+| T9 | Basename only — no path leak | (see T9 setup below) | Attachment shown as `quarterly.txt` (not `/tmp/gro-secret-dir/quarterly.txt`). |
+| T10 | Empty subject explicitly allowed | `./bin/gro mail draft --to "$ME" --subject "" --body "T10" --plain` | Exit 0. Gmail Drafts shows `(no subject)`. |
+| T11 | JSON output | `./bin/gro mail draft --to "$ME" --subject "T11 json" --body "x" --plain --json \| jq .` | Stdout is valid JSON with `id`, `messageId`, `threadId`. `jq` exits 0. |
+
+### Setup blocks
+
+**T2:**
+```bash
+cat > /tmp/gro-t2.md <<'EOF'
+# Heading
+
+**bold** and _italic_
+
+- one
+- two
+- three
+
+| col1 | col2 |
+|------|------|
+| a    | b    |
+| c    | d    |
+EOF
+./bin/gro mail draft --to "$ME" --subject "T2 markdown" --file /tmp/gro-t2.md
+```
+
+**T5:**
+```bash
+cat > /tmp/gro-t5.md <<'EOF'
+# Weekly report
+
+## Highlights
+
+- Shipped `gro mail draft` (#112)
+- ~~Cancelled~~ rescheduled the migration
+
+## Next week
+
+1. Roll out to prod
+2. Monitor
+3. Iterate
+EOF
+./bin/gro mail draft --to "$ME" --subject "T5 file body" --file /tmp/gro-t5.md
+```
+
+**T7:**
+```bash
+echo "T7 attachment content" > /tmp/gro-t7.txt
+./bin/gro mail draft --to "$ME" --subject "T7 single attachment" --body "see attached" --plain --attach /tmp/gro-t7.txt
+```
+
+**T8:**
+```bash
+printf 'a,b,c\n1,2,3\n4,5,6\n' > /tmp/gro-t8.csv
+printf '{"key":"value","nested":{"a":1}}' > /tmp/gro-t8.json
+./bin/gro mail draft --to "$ME" --subject "T8 multi attachments" --body "csv + json" --plain --attach /tmp/gro-t8.csv --attach /tmp/gro-t8.json
+```
+
+**T9:**
+```bash
+mkdir -p /tmp/gro-secret-dir
+echo "report contents" > /tmp/gro-secret-dir/quarterly.txt
+./bin/gro mail draft --to "$ME" --subject "T9 path leak check" --body "attachment name should be 'quarterly.txt' only" --plain --attach /tmp/gro-secret-dir/quarterly.txt
+```
+
+### Validation / Safety
+
+| # | Test Case | Command | Expected Result |
+|---|-----------|---------|-----------------|
+| T12 | Missing `--to` rejected before API call | `./bin/gro mail draft --subject "T12" --body "x" --plain; echo "exit=$?"` | Non-zero exit. Error mentions `--to is required`. No draft in Gmail. |
+| T13 | Missing `--subject` rejected | `./bin/gro mail draft --to "$ME" --body "x" --plain; echo "exit=$?"` | Non-zero exit. Error mentions `--subject is required`. |
+| T14 | Two body sources rejected | `./bin/gro mail draft --to "$ME" --subject "T14" --body "x" --stdin; echo "exit=$?"` | Non-zero exit. Error mentions `exactly one of`. |
+| T15 | `--plain` + `--html` rejected | `./bin/gro mail draft --to "$ME" --subject "T15" --body "x" --plain --html; echo "exit=$?"` | Non-zero exit. Error mentions `mutually exclusive`. |
+| T16 | Invalid email in `--to` | `./bin/gro mail draft --to "not-an-email" --subject "T16" --body "x" --plain; echo "exit=$?"` | Non-zero exit. Error mentions `--to`. |
+| T17 | CR/LF header injection rejected | `./bin/gro mail draft --to "$ME" --subject $'T17\r\nBcc: evil@x.com' --body "x" --plain; echo "exit=$?"` | Non-zero exit. Error mentions CR or LF. No draft created. |
+| T18 | Missing attachment file rejected | `./bin/gro mail draft --to "$ME" --subject "T18" --body "x" --plain --attach /nope/does/not/exist; echo "exit=$?"` | Non-zero exit before API call. Error mentions the missing path. No draft in Gmail. |
+
+### Optional: send-as alias (`--from`)
+
+Skip if no Gmail send-as alias is configured for the test user.
+
+| # | Test Case | Command | Expected Result |
+|---|-----------|---------|-----------------|
+| T19 | Valid alias | `./bin/gro mail draft --from <configured-alias> --to "$ME" --subject "T19 alias" --body "x" --plain` | Exit 0. Gmail Drafts shows the alias in From line. |
+| T20 | Unconfigured alias | `./bin/gro mail draft --from "not-my-alias@example.com" --to "$ME" --subject "T20 bad alias" --body "x" --plain; echo "exit=$?"` | Non-zero exit. API error surfaced verbatim from `creating draft: ...`. |
+
+### Reply-to-thread (`--reply-to` / `--reply-all`)
+
+**Setup additions:**
+```bash
+# Pick any existing message in your inbox as the source. The query can be
+# anything that resolves to a single recent message.
+SRC_ID=$(./bin/gro mail search "in:inbox" --json | jq -r '.[0].id')
+SRC_RFC=$(./bin/gro mail read "$SRC_ID" --json | jq -r '.rfcMessageId')
+SRC_THREAD=$(./bin/gro mail read "$SRC_ID" --json | jq -r '.threadId')
+echo "source: $SRC_ID / thread: $SRC_THREAD / rfc-id: $SRC_RFC"
+```
+
+For each happy-path scenario, capture the created draft's message ID and read it back to verify the wire-format headers:
+
+```bash
+DRAFT_MSG_ID=$(./bin/gro mail draft --reply-to "$SRC_ID" --body "T21 reply" --plain --json | jq -r '.messageId')
+./bin/gro mail read "$DRAFT_MSG_ID" --json | jq '{inReplyTo, references, threadId}'
+```
+
+| # | Test Case | Command | Expected Result |
+|---|-----------|---------|-----------------|
+| T21 | Simple reply | `./bin/gro mail draft --reply-to "$SRC_ID" --body "T21 reply" --plain --json` | Exit 0. Read-back JSON shows `threadId == $SRC_THREAD`, `inReplyTo == $SRC_RFC`, `references` ends with `$SRC_RFC`, subject prefixed `Re: `. Gmail UI shows the draft grouped under the original conversation. |
+| T22 | Reply-all | `./bin/gro mail draft --reply-to "$SRC_ID" --reply-all --body "T22 all" --plain --json` | Exit 0. Cc on the draft contains the source To+Cc minus `$ME`. Read-back JSON same threading checks as T21. |
+| T23 | Explicit subject override | `./bin/gro mail draft --reply-to "$SRC_ID" --subject "T23 custom" --body "x" --plain --json` | Exit 0. Draft subject is `T23 custom` (no `Re:` prefix). Threading headers still set. |
+| T24 | Explicit Cc override | `./bin/gro mail draft --reply-to "$SRC_ID" --cc "$ME" --body "T24 cc" --plain --json` | Exit 0. Draft Cc is exactly `$ME` (replaces, not merges with, derived Cc). |
+| T25 | No double Re: prefix | First find a source message whose subject already starts with `Re:`: `RE_SRC=$(./bin/gro mail search "subject:Re:" --json \| jq -r '.[0].id')`. Then: `./bin/gro mail draft --reply-to "$RE_SRC" --body "T25" --plain --json` | Exit 0. Read-back subject is unchanged (no `Re: Re: ` doubling). |
+| T26 | Reply-all without reply-to | `./bin/gro mail draft --to "$ME" --subject "x" --body "y" --reply-all; echo "exit=$?"` | Non-zero exit. Error mentions `--reply-all requires --reply-to`. |
+| T27 | Quoted reply (plain) | `./bin/gro mail draft --reply-to "$SRC_ID" --body "T27 reply" --plain --json` then read back the draft body | Exit 0. Draft body starts with `T27 reply`, then a blank line, an `On <date> <sender> wrote:` line, then the source body with every line `> `-prefixed (empty lines are `>`). |
+| T28 | Quoted reply (HTML) collapses in Gmail | `./bin/gro mail draft --reply-to "$SRC_ID" --body "T28 **reply**" --json` then open the draft in the Gmail web UI | Exit 0. Draft body contains a `<div class="gmail_quote">` / `<blockquote class="gmail_quote" …>` wrapper. **Manual:** opening the draft in Gmail shows the quoted history collapsed behind Gmail's “…” affordance (not automatable — Gmail client-side rendering). |
+| T29 | Quote-only reply (no body source) | `./bin/gro mail draft --reply-to "$SRC_ID" --json` then read back | Exit 0. Draft body is exactly the quote block (attribution + quoted source), no leading blank lines, no authored text. Threading headers set as T21. |
+| T30 | `--no-quote` reply | `./bin/gro mail draft --reply-to "$SRC_ID" --no-quote --body "T30" --plain --json` then read back | Exit 0. Draft body is exactly `T30` — no attribution, no quote. Threading headers still set. |
+| T31 | `--no-quote` bare (blank draft) | `./bin/gro mail draft --reply-to "$SRC_ID" --no-quote --json` then read back | Exit 0. Draft body is empty. Threading headers still set. |
+| T32 | `--no-quote` without reply-to | `./bin/gro mail draft --to "$ME" --subject "x" --body "y" --no-quote; echo "exit=$?"` | Non-zero exit. Error mentions `--no-quote requires --reply-to`. |
+
+### Cleanup
+
+```bash
+rm -f /tmp/gro-t2.md /tmp/gro-t5.md /tmp/gro-t7.txt /tmp/gro-t8.csv /tmp/gro-t8.json
+rm -rf /tmp/gro-secret-dir
+# Gmail UI: Drafts → select T* drafts → Discard
+```
+
+---
+
+## Adding New Tests
+
+When adding new features or fixing bugs:
+
+1. Add test cases to the appropriate section above
+2. Include both happy path and error cases
+3. Document any known limitations or edge cases
+4. Update the "Test Execution Checklist" if needed

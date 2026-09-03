@@ -1,0 +1,415 @@
+package drive
+
+import (
+	"context"
+	"errors"
+	"os"
+	"testing"
+
+	driveapi "github.com/open-cli-collective/google-cli-common/drive"
+	"github.com/open-cli-collective/google-cli-common/testutil"
+)
+
+// withMockClient sets up a mock client factory for tests
+func withMockClient(mock DriveClient, f func()) {
+	testutil.WithFactory(&ClientFactory, func(_ context.Context) (DriveClient, error) {
+		return mock, nil
+	}, f)
+}
+
+// withFailingClientFactory sets up a factory that returns an error
+func withFailingClientFactory(f func()) {
+	testutil.WithFactory(&ClientFactory, func(_ context.Context) (DriveClient, error) {
+		return nil, errors.New("connection failed")
+	}, f)
+}
+
+func TestListCommand_Success(t *testing.T) {
+	mock := &MockDriveClient{
+		ListFilesFunc: func(_ context.Context, query string, _ int64) ([]*driveapi.File, error) {
+			testutil.Contains(t, query, "'root' in parents")
+			return testutil.SampleDriveFiles(2), nil
+		},
+	}
+
+	cmd := newListCommand()
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Contains(t, output, "file_a")
+		testutil.Contains(t, output, "test-document.pdf")
+	})
+}
+
+func TestListCommand_Empty(t *testing.T) {
+	mock := &MockDriveClient{
+		ListFilesFunc: func(_ context.Context, _ string, _ int64) ([]*driveapi.File, error) {
+			return []*driveapi.File{}, nil
+		},
+	}
+
+	cmd := newListCommand()
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Contains(t, output, "No files found")
+	})
+}
+
+func TestListCommand_WithFolder(t *testing.T) {
+	mock := &MockDriveClient{
+		ListFilesFunc: func(_ context.Context, query string, _ int64) ([]*driveapi.File, error) {
+			testutil.Contains(t, query, "'folder123' in parents")
+			return testutil.SampleDriveFiles(1), nil
+		},
+	}
+
+	cmd := newListCommand()
+	cmd.SetArgs([]string{"folder123"})
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Contains(t, output, "file_a")
+	})
+}
+
+func TestListCommand_WithTypeFilter(t *testing.T) {
+	mock := &MockDriveClient{
+		ListFilesFunc: func(_ context.Context, query string, _ int64) ([]*driveapi.File, error) {
+			testutil.Contains(t, query, "mimeType")
+			return testutil.SampleDriveFiles(1), nil
+		},
+	}
+
+	cmd := newListCommand()
+	cmd.SetArgs([]string{"--type", "document"})
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Contains(t, output, "file_a")
+	})
+}
+
+func TestListCommand_InvalidType(t *testing.T) {
+	cmd := newListCommand()
+	cmd.SetArgs([]string{"--type", "invalid"})
+
+	withMockClient(&MockDriveClient{}, func() {
+		err := cmd.Execute()
+		testutil.Error(t, err)
+		testutil.Contains(t, err.Error(), "unknown file type")
+	})
+}
+
+func TestListCommand_APIError(t *testing.T) {
+	mock := &MockDriveClient{
+		ListFilesFunc: func(_ context.Context, _ string, _ int64) ([]*driveapi.File, error) {
+			return nil, errors.New("API error")
+		},
+	}
+
+	cmd := newListCommand()
+
+	withMockClient(mock, func() {
+		err := cmd.Execute()
+		testutil.Error(t, err)
+		testutil.Contains(t, err.Error(), "listing files")
+	})
+}
+
+func TestListCommand_ClientCreationError(t *testing.T) {
+	cmd := newListCommand()
+
+	withFailingClientFactory(func() {
+		err := cmd.Execute()
+		testutil.Error(t, err)
+		testutil.Contains(t, err.Error(), "creating Drive client")
+	})
+}
+
+func TestSearchCommand_Success(t *testing.T) {
+	mock := &MockDriveClient{
+		ListFilesFunc: func(_ context.Context, query string, _ int64) ([]*driveapi.File, error) {
+			testutil.Contains(t, query, "fullText contains 'report'")
+			return testutil.SampleDriveFiles(2), nil
+		},
+	}
+
+	cmd := newSearchCommand()
+	cmd.SetArgs([]string{"report"})
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Contains(t, output, "file_a")
+		testutil.Contains(t, output, "2 file(s)")
+	})
+}
+
+func TestSearchCommand_NameOnly(t *testing.T) {
+	mock := &MockDriveClient{
+		ListFilesFunc: func(_ context.Context, query string, _ int64) ([]*driveapi.File, error) {
+			testutil.Contains(t, query, "name contains 'budget'")
+			return testutil.SampleDriveFiles(1), nil
+		},
+	}
+
+	cmd := newSearchCommand()
+	cmd.SetArgs([]string{"budget", "--name"})
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Contains(t, output, "file_a")
+	})
+}
+
+func TestSearchCommand_NoResults(t *testing.T) {
+	mock := &MockDriveClient{
+		ListFilesFunc: func(_ context.Context, _ string, _ int64) ([]*driveapi.File, error) {
+			return []*driveapi.File{}, nil
+		},
+	}
+
+	cmd := newSearchCommand()
+	cmd.SetArgs([]string{"nonexistent"})
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Contains(t, output, "No files found")
+	})
+}
+
+func TestSearchCommand_APIError(t *testing.T) {
+	mock := &MockDriveClient{
+		ListFilesFunc: func(_ context.Context, _ string, _ int64) ([]*driveapi.File, error) {
+			return nil, errors.New("API error")
+		},
+	}
+
+	cmd := newSearchCommand()
+	cmd.SetArgs([]string{"test"})
+
+	withMockClient(mock, func() {
+		err := cmd.Execute()
+		testutil.Error(t, err)
+		testutil.Contains(t, err.Error(), "searching files")
+	})
+}
+
+func TestGetCommand_Success(t *testing.T) {
+	mock := &MockDriveClient{
+		GetFileFunc: func(_ context.Context, fileID string) (*driveapi.File, error) {
+			testutil.Equal(t, fileID, "file123")
+			return testutil.SampleDriveFile("file123"), nil
+		},
+	}
+
+	cmd := newGetCommand()
+	cmd.SetArgs([]string{"file123"})
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Contains(t, output, "file123")
+		testutil.Contains(t, output, "test-document.pdf")
+		testutil.Contains(t, output, "owner@example.com")
+	})
+}
+
+func TestGetCommand_NotFound(t *testing.T) {
+	mock := &MockDriveClient{
+		GetFileFunc: func(_ context.Context, _ string) (*driveapi.File, error) {
+			return nil, errors.New("file not found")
+		},
+	}
+
+	cmd := newGetCommand()
+	cmd.SetArgs([]string{"nonexistent"})
+
+	withMockClient(mock, func() {
+		err := cmd.Execute()
+		testutil.Error(t, err)
+		testutil.Contains(t, err.Error(), "getting file")
+	})
+}
+
+func TestDownloadCommand_RegularFile(t *testing.T) {
+	// Create a temp directory for download
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	mock := &MockDriveClient{
+		GetFileFunc: func(_ context.Context, _ string) (*driveapi.File, error) {
+			return testutil.SampleDriveFile("file123"), nil
+		},
+		DownloadFileFunc: func(_ context.Context, fileID string) ([]byte, error) {
+			testutil.Equal(t, fileID, "file123")
+			return []byte("test content"), nil
+		},
+	}
+
+	cmd := newDownloadCommand()
+	cmd.SetArgs([]string{"file123"})
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Contains(t, output, "Downloading")
+		testutil.Contains(t, output, "Saved to")
+	})
+}
+
+func TestDownloadCommand_ToStdout(t *testing.T) {
+	mock := &MockDriveClient{
+		GetFileFunc: func(_ context.Context, _ string) (*driveapi.File, error) {
+			return testutil.SampleDriveFile("file123"), nil
+		},
+		DownloadFileFunc: func(_ context.Context, _ string) ([]byte, error) {
+			return []byte("test content"), nil
+		},
+	}
+
+	cmd := newDownloadCommand()
+	cmd.SetArgs([]string{"file123", "--stdout"})
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Equal(t, output, "test content")
+	})
+}
+
+func TestDownloadCommand_GoogleDocRequiresFormat(t *testing.T) {
+	mock := &MockDriveClient{
+		GetFileFunc: func(_ context.Context, _ string) (*driveapi.File, error) {
+			return testutil.SampleGoogleDoc("doc123"), nil
+		},
+	}
+
+	cmd := newDownloadCommand()
+	cmd.SetArgs([]string{"doc123"})
+
+	withMockClient(mock, func() {
+		err := cmd.Execute()
+		testutil.Error(t, err)
+		testutil.Contains(t, err.Error(), "requires --format flag")
+	})
+}
+
+func TestDownloadCommand_ExportGoogleDoc(t *testing.T) {
+	// Create a temp directory for download
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	mock := &MockDriveClient{
+		GetFileFunc: func(_ context.Context, _ string) (*driveapi.File, error) {
+			return testutil.SampleGoogleDoc("doc123"), nil
+		},
+		ExportFileFunc: func(_ context.Context, fileID, mimeType string) ([]byte, error) {
+			testutil.Equal(t, fileID, "doc123")
+			testutil.Contains(t, mimeType, "pdf")
+			return []byte("pdf content"), nil
+		},
+	}
+
+	cmd := newDownloadCommand()
+	cmd.SetArgs([]string{"doc123", "--format", "pdf"})
+
+	withMockClient(mock, func() {
+		output := testutil.CaptureStdout(t, func() {
+			err := cmd.Execute()
+			testutil.NoError(t, err)
+		})
+
+		testutil.Contains(t, output, "Exporting")
+		testutil.Contains(t, output, "Saved to")
+	})
+}
+
+func TestDownloadCommand_RegularFileCannotUseFormat(t *testing.T) {
+	mock := &MockDriveClient{
+		GetFileFunc: func(_ context.Context, _ string) (*driveapi.File, error) {
+			return testutil.SampleDriveFile("file123"), nil
+		},
+	}
+
+	cmd := newDownloadCommand()
+	cmd.SetArgs([]string{"file123", "--format", "pdf"})
+
+	withMockClient(mock, func() {
+		err := cmd.Execute()
+		testutil.Error(t, err)
+		testutil.Contains(t, err.Error(), "--format flag is only for Google Workspace files")
+	})
+}
+
+func TestDownloadCommand_APIError(t *testing.T) {
+	mock := &MockDriveClient{
+		GetFileFunc: func(_ context.Context, _ string) (*driveapi.File, error) {
+			return testutil.SampleDriveFile("file123"), nil
+		},
+		DownloadFileFunc: func(_ context.Context, _ string) ([]byte, error) {
+			return nil, errors.New("download failed")
+		},
+	}
+
+	cmd := newDownloadCommand()
+	cmd.SetArgs([]string{"file123", "--stdout"})
+
+	withMockClient(mock, func() {
+		err := cmd.Execute()
+		testutil.Error(t, err)
+		testutil.Contains(t, err.Error(), "downloading file")
+	})
+}
+
+func TestDownloadCommand_ClientCreationError(t *testing.T) {
+	cmd := newDownloadCommand()
+	cmd.SetArgs([]string{"file123"})
+
+	withFailingClientFactory(func() {
+		err := cmd.Execute()
+		testutil.Error(t, err)
+		testutil.Contains(t, err.Error(), "creating Drive client")
+	})
+}

@@ -1,0 +1,49 @@
+package calendar
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+
+	"github.com/open-cli-collective/google-cli-common/calendar"
+)
+
+func newGetCommand() *cobra.Command {
+	var (
+		calendarID string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "get <event-id>",
+		Short: "Get event details",
+		Long: `Get the full details of a calendar event.
+
+Shows summary, time, location, description, attendees, and meeting links.
+
+Examples:
+  gro calendar get abc123xyz
+  gro cal get abc123xyz --calendar work@group.calendar.google.com`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eventID := args[0]
+
+			client, err := newCalendarClient(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("creating Calendar client: %w", err)
+			}
+
+			event, err := client.GetEvent(cmd.Context(), calendarID, eventID)
+			if err != nil {
+				return fmt.Errorf("getting event: %w", err)
+			}
+
+			parsedEvent := calendar.ParseEvent(event)
+			printEvent(parsedEvent, true)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&calendarID, "calendar", "c", "primary", "Calendar ID containing the event")
+
+	return cmd
+}

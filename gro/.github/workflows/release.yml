@@ -1,0 +1,42 @@
+name: Release
+
+# Triggered by the release tag that auto-release.yml mints (or a manual tag push).
+# Builds with GoReleaser on macOS (CGO darwin can't cross-compile), gates the
+# Keychain backend via the manifest keychain_probe, publishes the GitHub release,
+# then fans out to the packaging channels packaging/identity.yml declares (homebrew
+# cask, winget, chocolatey, linux). The inline goreleaser/darwin-gate jobs, the
+# disabled snap job, and the inline linux-dispatch are replaced by the reusable
+# workflow's manifest-driven channel jobs (snap is decommissioned — distribution.md
+# §7, Linux ships via apt/rpm).
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Build + render but skip publishing (only meaningful from a tag ref)"
+        type: boolean
+        default: true
+
+# The reusable workflow's goreleaser job publishes the release via GITHUB_TOKEN.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: open-cli-collective/.github/.github/workflows/release.yml@v1
+    with:
+      # tag push is live (false); workflow_dispatch honors the checkbox. Compare
+      # against both true and 'true' because a workflow_dispatch boolean input
+      # may surface as a real boolean or the string "true" depending on context.
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && (inputs.dry-run == true || inputs.dry-run == 'true') }}
+    secrets:
+      homebrew-tap-token: ${{ secrets.TAP_GITHUB_TOKEN }}
+      chocolatey-api-key: ${{ secrets.CHOCOLATEY_API_KEY }}
+      winget-token: ${{ secrets.WINGET_GITHUB_TOKEN }}
+      linux-dispatch-token: ${{ secrets.LINUX_PACKAGES_DISPATCH_TOKEN }}
+      macos-cert-p12: ${{ secrets.MACOS_CERT_P12 }}
+      macos-cert-password: ${{ secrets.MACOS_CERT_PASSWORD }}
+      macos-cert-cn: ${{ secrets.MACOS_CERT_CN }}
+      macos-cert-leaf-sha: ${{ secrets.MACOS_CERT_LEAF_SHA }}

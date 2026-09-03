@@ -1,0 +1,60 @@
+package contacts
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+
+	"github.com/open-cli-collective/google-cli-common/contacts"
+)
+
+func newGroupsCommand() *cobra.Command {
+	var (
+		maxResults int64
+	)
+
+	cmd := &cobra.Command{
+		Use:   "groups",
+		Short: "List contact groups",
+		Long: `List all contact groups (labels) from your Google Contacts.
+
+Contact groups include both user-created labels and system groups.
+
+Examples:
+  gro contacts groups
+  gro contacts groups --max 50`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, err := newContactsClient(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("creating Contacts client: %w", err)
+			}
+
+			resp, err := client.ListContactGroups(cmd.Context(), "", maxResults)
+			if err != nil {
+				return fmt.Errorf("listing contact groups: %w", err)
+			}
+
+			if len(resp.ContactGroups) == 0 {
+				fmt.Println("No contact groups found.")
+				return nil
+			}
+
+			parsedGroups := make([]*contacts.ContactGroup, len(resp.ContactGroups))
+			for i, g := range resp.ContactGroups {
+				parsedGroups[i] = contacts.ParseContactGroup(g)
+			}
+
+			fmt.Printf("Found %d contact group(s):\n\n", len(resp.ContactGroups))
+			for _, group := range parsedGroups {
+				printContactGroup(group)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().Int64VarP(&maxResults, "max", "m", 30, "Maximum number of groups to return")
+
+	return cmd
+}
