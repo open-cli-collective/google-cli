@@ -6,6 +6,8 @@ These rules keep the two binaries mechanically distinct. Structural tests named 
 
 `gro` must have no dependency path into `internal/rw` or `internal/rwcmd`, its scopes must stay on the non-destructive allowlist, and its production graph must contain no forbidden destructive Google API calls.
 
+The only send path is `grw mail send` in `internal/rw/gmail`; it is unreachable from `gro` by the link-graph test.
+
 Enforced by `TestGroNeverLinksWriteCode`, `TestAllScopesAreNonDestructive`, and `TestNoDestructiveAPIMethodsInProductionCode`.
 
 ## 2. `grw` covers the read scope for every service it touches
