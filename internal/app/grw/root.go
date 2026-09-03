@@ -17,6 +17,7 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/rootutil"
 	rwcalendar "github.com/open-cli-collective/google-cli/internal/rwcmd/calendar"
 	rwcontacts "github.com/open-cli-collective/google-cli/internal/rwcmd/contacts"
+	rwdrive "github.com/open-cli-collective/google-cli/internal/rwcmd/drive"
 	"github.com/open-cli-collective/google-cli/internal/rwcmd/mail"
 	"github.com/open-cli-collective/google-cli/internal/version"
 )
@@ -35,7 +36,7 @@ It reads and organizes mail like its read-only sibling gro, and adds the
 operations gro deliberately cannot perform: deleting messages (Trash by
 default, permanent behind a guard), managing labels as folders/subfolders, and
 creating Gmail filters. It also reads profile information and creates, updates,
-and deletes Google Calendar events, contacts, and contact groups.
+and deletes Google Calendar events, contacts, contact groups, and Drive files.
 
 grw stores its credentials separately from gro (keyring namespace
 "google-readwrite"), so the two can be used in isolation — e.g. give an agent
@@ -79,5 +80,6 @@ func init() {
 	rootCmd.AddCommand(mail.NewCommand())
 	rootCmd.AddCommand(rwcalendar.NewCommand())
 	rootCmd.AddCommand(rwcontacts.NewCommand())
+	rootCmd.AddCommand(rwdrive.NewCommand())
 	rootCmd.AddCommand(refreshcmd.NewCommand())
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/people/v1"
 )
@@ -19,6 +20,9 @@ func TestScopes(t *testing.T) {
 		gmail.MailGoogleComScope,
 		calendar.CalendarReadonlyScope,
 		calendar.CalendarEventsScope,
+		drive.DriveScope,
+		drive.DriveReadonlyScope,
+		drive.DriveMetadataScope,
 		people.ContactsScope,
 		people.UserinfoProfileScope,
 	}
@@ -49,6 +53,9 @@ func TestReadWriteScopesPresent(t *testing.T) {
 	}
 	if !strings.Contains(joined, "mail.google.com") {
 		t.Error("grw must request mail.google.com (for permanent delete)")
+	}
+	if !strings.Contains(joined, "/auth/drive ") {
+		t.Error("grw must request full Drive access")
 	}
 }
 

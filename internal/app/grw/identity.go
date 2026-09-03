@@ -12,6 +12,7 @@ package grw
 
 import (
 	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/people/v1"
 
@@ -31,6 +32,9 @@ var Scopes = []string{
 	gmail.MailGoogleComScope,
 	calendar.CalendarReadonlyScope,
 	calendar.CalendarEventsScope,
+	drive.DriveScope,
+	drive.DriveReadonlyScope,
+	drive.DriveMetadataScope,
 	people.ContactsScope,
 	people.UserinfoProfileScope,
 }
@@ -43,6 +47,9 @@ var ScopeDescriptions = map[string]string{
 	gmail.MailGoogleComScope:       "Gmail Full Access — required for permanent deletion (gated behind --permanent and a typed confirmation).",
 	calendar.CalendarReadonlyScope: "Calendar Read-Only — read calendars and events.",
 	calendar.CalendarEventsScope:   "Calendar Events — create, update, and delete events.",
+	drive.DriveScope:               "Drive Full Access — upload files, create folders, rename, move, trash, restore, and permanently delete files.",
+	drive.DriveReadonlyScope:       "Drive Read-Only — read files and metadata.",
+	drive.DriveMetadataScope:       "Drive Metadata — read and update file metadata (star/unstar).",
 	people.ContactsScope:           "Contacts — read, create, update, and delete contacts and contact groups.",
 	people.UserinfoProfileScope:    "Basic Profile — read the authenticated user's name and email for `me`.",
 }
