@@ -48,6 +48,29 @@ func TestFilter_Create(t *testing.T) {
 	}
 }
 
+func TestFilter_CreateDryRun(t *testing.T) {
+	mock := &mockWriteClient{
+		GetLabelIDFunc: func(context.Context, string) (string, error) {
+			t.Fatal("dry-run must not resolve a label")
+			return "", nil
+		},
+		CreateFilterFunc: func(context.Context, *gmailv1.Filter) (*gmailv1.Filter, error) {
+			t.Fatal("dry-run must not create a filter")
+			return nil, nil
+		},
+	}
+	withMockClient(mock, func() {
+		out := testutil.CaptureStdout(t, func() {
+			if _, err := runCmd(newFilterCreateCommand(), "--from", "news@example.com", "--add-label", "Newsletters", "--dry-run"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if !strings.Contains(out, "[dry-run] Would create filter.") {
+			t.Errorf("output %q missing dry-run line", out)
+		}
+	})
+}
+
 func TestFilter_CreateRequiresCriterion(t *testing.T) {
 	withMockClient(&mockWriteClient{}, func() {
 		_, err := runCmd(newFilterCreateCommand(), "--archive")
@@ -110,4 +133,21 @@ func TestFilter_Remove(t *testing.T) {
 	if deleted != "flt_9" {
 		t.Fatalf("DeleteFilter(id=%q), want flt_9", deleted)
 	}
+}
+
+func TestFilter_RemoveDryRun(t *testing.T) {
+	mock := &mockWriteClient{DeleteFilterFunc: func(context.Context, string) error {
+		t.Fatal("dry-run must not delete a filter")
+		return nil
+	}}
+	withMockClient(mock, func() {
+		out := testutil.CaptureStdout(t, func() {
+			if _, err := runCmd(newFilterRemoveCommand(), "flt_9", "-n"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if !strings.Contains(out, "[dry-run] Would delete filter flt_9.") {
+			t.Errorf("output %q missing dry-run line", out)
+		}
+	})
 }

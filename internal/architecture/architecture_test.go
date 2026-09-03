@@ -1,80 +1,52 @@
 package architecture
 
 import (
+	"bytes"
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
-	mailcmd "github.com/open-cli-collective/google-cli/internal/cmd/mail"
-
 	groapp "github.com/open-cli-collective/google-cli/internal/app/gro"
+	grwapp "github.com/open-cli-collective/google-cli/internal/app/grw"
 	calcmd "github.com/open-cli-collective/google-cli/internal/cmd/calendar"
 	contactscmd "github.com/open-cli-collective/google-cli/internal/cmd/contacts"
 	drivecmd "github.com/open-cli-collective/google-cli/internal/cmd/drive"
+	mailcmd "github.com/open-cli-collective/google-cli/internal/cmd/mail"
 	mecmd "github.com/open-cli-collective/google-cli/internal/cmd/me"
+	rwmailcmd "github.com/open-cli-collective/google-cli/internal/rwcmd/mail"
 )
 
-// domainPackages lists the command packages that must follow structural conventions.
-var domainPackages = []string{"calendar", "contacts", "drive", "me"}
+const modulePath = "github.com/open-cli-collective/google-cli"
 
-// domainCommands returns the top-level cobra.Command for each domain package.
+var domainPackages = []string{"calendar", "contacts", "drive", "mail", "me"}
+
 func domainCommands() map[string]*cobra.Command {
 	return map[string]*cobra.Command{
-		"mail":     mailcmd.NewCommand(),
 		"calendar": calcmd.NewCommand(),
 		"contacts": contactscmd.NewCommand(),
 		"drive":    drivecmd.NewCommand(),
+		"mail":     mailcmd.NewCommand(),
 		"me":       mecmd.NewCommand(),
 	}
 }
 
-// findModuleRoot walks up to the module root (go.mod).
-func findModuleRoot(t *testing.T) string {
-	t.Helper()
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getting working directory: %v", err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("could not find module root (go.mod)")
-		}
-		dir = parent
-	}
+type commandPair struct {
+	read  func() *cobra.Command
+	write func() *cobra.Command
 }
 
-// parseNonTestFiles parses all non-test .go files in a directory.
-func parseNonTestFiles(t *testing.T, dir string) []*ast.File {
-	t.Helper()
-	fset := token.NewFileSet()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("reading directory %s: %v", dir, err)
-	}
-	var files []*ast.File
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.ParseComments)
-		if err != nil {
-			t.Fatalf("parsing %s: %v", name, err)
-		}
-		files = append(files, f)
-	}
-	return files
+var writeCommandPairs = map[string]commandPair{
+	"mail": {read: mailcmd.NewCommand, write: rwmailcmd.NewCommand},
 }
 
 type leafInfo struct {
@@ -82,169 +54,333 @@ type leafInfo struct {
 	cmd  *cobra.Command
 }
 
-// leafCommands recursively collects all leaf commands (commands with no subcommands).
 func leafCommands(cmd *cobra.Command, parentPath string) []leafInfo {
-	subs := cmd.Commands()
-	if len(subs) == 0 {
+	if len(cmd.Commands()) == 0 {
 		return []leafInfo{{path: parentPath, cmd: cmd}}
 	}
 	var leaves []leafInfo
-	for _, sub := range subs {
-		subPath := parentPath + " " + sub.Name()
-		leaves = append(leaves, leafCommands(sub, subPath)...)
+	for _, sub := range cmd.Commands() {
+		leaves = append(leaves, leafCommands(sub, parentPath+" "+sub.Name())...)
 	}
 	return leaves
 }
 
-// ---------------------------------------------------------------------------
-// Structural tests
-// ---------------------------------------------------------------------------
+func leafMap(cmd *cobra.Command) map[string]*cobra.Command {
+	leaves := make(map[string]*cobra.Command)
+	for _, leaf := range leafCommands(cmd, cmd.Name()) {
+		leaves[leaf.path] = leaf.cmd
+	}
+	return leaves
+}
 
-// TestDomainPackagesDefineClientInterface verifies that every domain command package
-// declares an exported interface type whose name ends in "Client".
+// assertReadSupersetAndAddedLeaves fails the test if the write command drops
+// any read leaf, then returns the leaves only the write command has.
+func assertReadSupersetAndAddedLeaves(t *testing.T, domain string) map[string]*cobra.Command {
+	t.Helper()
+	pair, ok := writeCommandPairs[domain]
+	if !ok {
+		t.Fatalf("internal/rwcmd/%s needs a command pair in architecture tests", domain)
+	}
+	read, write := leafMap(pair.read()), leafMap(pair.write())
+	for path := range read {
+		if _, ok := write[path]; !ok {
+			t.Errorf("write command is missing read leaf %q", path)
+		}
+	}
+	for path := range read {
+		delete(write, path)
+	}
+	return write
+}
+
+func packageDirs(t *testing.T, kind string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(repoRoot(t), "internal", kind))
+	if err != nil {
+		t.Fatalf("read internal/%s: %v", kind, err)
+	}
+	var names []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			names = append(names, entry.Name())
+		}
+	}
+	return names
+}
+
+func parseNonTestFiles(t *testing.T, dir string) []*ast.File {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	var files []*ast.File
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, name), nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		files = append(files, file)
+	}
+	return files
+}
+
+type commandPackage struct {
+	name string
+	dir  string
+}
+
+func commandPackages(t *testing.T) []commandPackage {
+	t.Helper()
+	root := repoRoot(t)
+	packages := make([]commandPackage, 0, len(domainPackages))
+	for _, name := range domainPackages {
+		packages = append(packages, commandPackage{"cmd/" + name, filepath.Join(root, "internal", "cmd", name)})
+	}
+	for _, name := range packageDirs(t, "rwcmd") {
+		packages = append(packages, commandPackage{"rwcmd/" + name, filepath.Join(root, "internal", "rwcmd", name)})
+	}
+	return packages
+}
+
 func TestDomainPackagesDefineClientInterface(t *testing.T) {
 	t.Parallel()
-	root := findModuleRoot(t)
-
-	for _, pkg := range domainPackages {
-		t.Run(pkg, func(t *testing.T) {
+	for _, pkg := range commandPackages(t) {
+		pkg := pkg
+		t.Run(pkg.name, func(t *testing.T) {
 			t.Parallel()
-			dir := filepath.Join(root, "internal", "cmd", pkg)
-			files := parseNonTestFiles(t, dir)
-
-			var found bool
-			for _, f := range files {
-				for _, decl := range f.Decls {
-					genDecl, ok := decl.(*ast.GenDecl)
-					if !ok || genDecl.Tok != token.TYPE {
+			for _, file := range parseNonTestFiles(t, pkg.dir) {
+				for _, decl := range file.Decls {
+					gen, ok := decl.(*ast.GenDecl)
+					if !ok || gen.Tok != token.TYPE {
 						continue
 					}
-					for _, spec := range genDecl.Specs {
-						typeSpec, ok := spec.(*ast.TypeSpec)
-						if !ok {
-							continue
-						}
-						_, isInterface := typeSpec.Type.(*ast.InterfaceType)
-						if isInterface && strings.HasSuffix(typeSpec.Name.Name, "Client") {
-							found = true
-							if !typeSpec.Name.IsExported() {
-								t.Errorf("client interface %s must be exported", typeSpec.Name.Name)
-							}
+					for _, spec := range gen.Specs {
+						typ, ok := spec.(*ast.TypeSpec)
+						if _, isInterface := typ.Type.(*ast.InterfaceType); ok && isInterface && typ.Name.IsExported() && strings.HasSuffix(typ.Name.Name, "Client") {
+							return
 						}
 					}
 				}
 			}
-
-			if !found {
-				t.Errorf("package internal/cmd/%s must define an exported interface ending in 'Client'", pkg)
-			}
+			t.Errorf("internal/%s must define an exported interface ending in Client", pkg.name)
 		})
 	}
 }
 
-// TestDomainPackagesHaveClientFactory verifies that every domain command package
-// declares a package-level ClientFactory variable for dependency injection.
 func TestDomainPackagesHaveClientFactory(t *testing.T) {
 	t.Parallel()
-	root := findModuleRoot(t)
-
-	for _, pkg := range domainPackages {
-		t.Run(pkg, func(t *testing.T) {
+	for _, pkg := range commandPackages(t) {
+		pkg := pkg
+		t.Run(pkg.name, func(t *testing.T) {
 			t.Parallel()
-			dir := filepath.Join(root, "internal", "cmd", pkg)
-			files := parseNonTestFiles(t, dir)
-
-			var found bool
-			for _, f := range files {
-				for _, decl := range f.Decls {
-					genDecl, ok := decl.(*ast.GenDecl)
-					if !ok || genDecl.Tok != token.VAR {
+			for _, file := range parseNonTestFiles(t, pkg.dir) {
+				for _, decl := range file.Decls {
+					gen, ok := decl.(*ast.GenDecl)
+					if !ok || gen.Tok != token.VAR {
 						continue
 					}
-					for _, spec := range genDecl.Specs {
-						valueSpec, ok := spec.(*ast.ValueSpec)
+					for _, spec := range gen.Specs {
+						value, ok := spec.(*ast.ValueSpec)
 						if !ok {
 							continue
 						}
-						for _, name := range valueSpec.Names {
+						for _, name := range value.Names {
 							if name.Name == "ClientFactory" {
-								found = true
+								return
 							}
 						}
 					}
 				}
 			}
+			t.Errorf("internal/%s must define ClientFactory", pkg.name)
+		})
+	}
+}
 
-			if !found {
-				t.Errorf("package internal/cmd/%s must define a ClientFactory variable for dependency injection", pkg)
+func TestDomainPackagesExportNewCommand(t *testing.T) {
+	t.Parallel()
+	for _, pkg := range commandPackages(t) {
+		pkg := pkg
+		t.Run(pkg.name, func(t *testing.T) {
+			t.Parallel()
+			for _, file := range parseNonTestFiles(t, pkg.dir) {
+				for _, decl := range file.Decls {
+					fn, ok := decl.(*ast.FuncDecl)
+					if ok && fn.Recv == nil && fn.Name.Name == "NewCommand" {
+						return
+					}
+				}
+			}
+			t.Errorf("internal/%s must export NewCommand", pkg.name)
+		})
+	}
+}
+
+func TestWriteCommandsExtendReadCommands(t *testing.T) {
+	t.Parallel()
+	for _, domain := range packageDirs(t, "rwcmd") {
+		domain := domain
+		t.Run(domain, func(t *testing.T) {
+			t.Parallel()
+			if added := assertReadSupersetAndAddedLeaves(t, domain); len(added) == 0 {
+				t.Error("write command must add at least one leaf")
 			}
 		})
 	}
 }
 
-// TestDomainPackagesExportNewCommand verifies that every domain command package
-// exports a NewCommand() function (top-level, not a method).
-func TestDomainPackagesExportNewCommand(t *testing.T) {
-	t.Parallel()
-	root := findModuleRoot(t)
-
-	for _, pkg := range domainPackages {
-		t.Run(pkg, func(t *testing.T) {
-			t.Parallel()
-			dir := filepath.Join(root, "internal", "cmd", pkg)
-			files := parseNonTestFiles(t, dir)
-
-			var found bool
-			for _, f := range files {
-				for _, decl := range f.Decls {
-					funcDecl, ok := decl.(*ast.FuncDecl)
+// embedsSelector reports whether some exported type accepted by typeName embeds
+// a type from importPath. With selectedType set it must be that exact type;
+// with selectedType empty any exported type named *Client counts.
+func embedsSelector(files []*ast.File, typeName func(string) bool, importPath, selectedType string) bool {
+	for _, file := range files {
+		aliases := map[string]bool{}
+		for _, spec := range file.Imports {
+			path, _ := strconv.Unquote(spec.Path.Value)
+			if path != importPath {
+				continue
+			}
+			alias := filepath.Base(path)
+			if spec.Name != nil {
+				alias = spec.Name.Name
+			}
+			aliases[alias] = true
+		}
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				typ, ok := spec.(*ast.TypeSpec)
+				if !ok || !typ.Name.IsExported() || !typeName(typ.Name.Name) {
+					continue
+				}
+				var fields *ast.FieldList
+				switch node := typ.Type.(type) {
+				case *ast.StructType:
+					fields = node.Fields
+				case *ast.InterfaceType:
+					fields = node.Methods
+				}
+				if fields == nil {
+					continue
+				}
+				for _, field := range fields.List {
+					if len(field.Names) != 0 {
+						continue
+					}
+					expr := field.Type
+					if star, ok := expr.(*ast.StarExpr); ok {
+						expr = star.X
+					}
+					sel, ok := expr.(*ast.SelectorExpr)
 					if !ok {
 						continue
 					}
-					// Must be a package-level function (no receiver), named NewCommand
-					if funcDecl.Name.Name == "NewCommand" && funcDecl.Recv == nil {
-						found = true
+					ident, identOK := sel.X.(*ast.Ident)
+					matchesExactType := selectedType != "" && sel.Sel.Name == selectedType
+					matchesClientConvention := selectedType == "" && sel.Sel.IsExported() && strings.HasSuffix(sel.Sel.Name, "Client")
+					if identOK && aliases[ident.Name] && (matchesExactType || matchesClientConvention) {
+						return true
 					}
 				}
 			}
+		}
+	}
+	return false
+}
 
-			if !found {
-				t.Errorf("package internal/cmd/%s must export a NewCommand() function", pkg)
+func TestWriteClientsEmbedReadClients(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	for _, domain := range packageDirs(t, "rw") {
+		domain := domain
+		t.Run(domain, func(t *testing.T) {
+			t.Parallel()
+			files := parseNonTestFiles(t, filepath.Join(root, "internal", "rw", domain))
+			if !embedsSelector(files, func(name string) bool { return name == "Client" }, modulePath+"/internal/api/"+domain, "Client") {
+				t.Errorf("internal/rw/%s.Client must embed *internal/api/%s.Client", domain, domain)
 			}
 		})
 	}
 }
 
-// TestResourceLeavesHaveNoJSONFlag verifies the §2 closed-set policy
-// from cli-common/docs/output-and-rendering.md: resource-surface leaf
-// commands (every leaf under mail/calendar/contacts/drive/me) emit text
-// output only. JSON is reserved for control-plane envelopes — today
-// that's `gro refresh --json` and `gro config show --json`, neither of
-// which is in domainCommands() so neither is touched by this walk.
-// Inverted from the pre-#144 TestAllLeafCommandsHaveJSONFlag invariant.
-func TestResourceLeavesHaveNoJSONFlag(t *testing.T) {
+func TestWriteCommandClientsEmbedReadCommandClients(t *testing.T) {
 	t.Parallel()
+	root := repoRoot(t)
+	for _, domain := range packageDirs(t, "rwcmd") {
+		domain := domain
+		t.Run(domain, func(t *testing.T) {
+			t.Parallel()
+			files := parseNonTestFiles(t, filepath.Join(root, "internal", "rwcmd", domain))
+			if !embedsSelector(files, func(name string) bool { return strings.HasSuffix(name, "Client") }, modulePath+"/internal/cmd/"+domain, "") {
+				t.Errorf("internal/rwcmd/%s client interface must embed internal/cmd/%s's client interface", domain, domain)
+			}
+		})
+	}
+}
 
-	for name, cmd := range domainCommands() {
-		for _, leaf := range leafCommands(cmd, name) {
-			t.Run(strings.TrimSpace(leaf.path), func(t *testing.T) {
+func TestWriteLeavesHaveDryRun(t *testing.T) {
+	t.Parallel()
+	readVerbs := map[string]bool{"list": true, "get": true, "show": true, "search": true}
+	for _, domain := range packageDirs(t, "rwcmd") {
+		for path, cmd := range assertReadSupersetAndAddedLeaves(t, domain) {
+			path, cmd := path, cmd
+			t.Run(path, func(t *testing.T) {
 				t.Parallel()
-				key := strings.TrimSpace(leaf.path)
-				if flag := leaf.cmd.Flags().Lookup("json"); flag != nil {
-					t.Errorf("resource-surface leaf %q must NOT declare --json (see docs/golden-principles.md §4 + cli-common output-and-rendering §2)", key)
+				parts := strings.Fields(path)
+				if readVerbs[parts[len(parts)-1]] {
+					return
+				}
+				flag := cmd.Flags().Lookup("dry-run")
+				if flag == nil || flag.Value.Type() != "bool" || flag.Shorthand != "n" {
+					t.Errorf("write leaf %q must declare bool --dry-run (-n)", path)
 				}
 			})
 		}
 	}
 }
 
-// TestResourceLeaf_RejectsJSON_EndToEnd is a spot-check complement to the
-// structural walk in TestResourceLeavesHaveNoJSONFlag. It dispatches one
-// representative resource leaf with --json through cobra and asserts the
-// user-visible "unknown flag" error so the end-to-end contract is exercised,
-// not just the static flag set. Closing the closed-set bypass (a new domain
-// added outside domainPackages) still requires updating that list — neither
-// test compensates for that.
+func TestPermanentWriteLeavesRequireYes(t *testing.T) {
+	t.Parallel()
+	for _, domain := range packageDirs(t, "rwcmd") {
+		for path, cmd := range assertReadSupersetAndAddedLeaves(t, domain) {
+			path, cmd := path, cmd
+			t.Run(path, func(t *testing.T) {
+				t.Parallel()
+				if cmd.Flags().Lookup("permanent") != nil && cmd.Flags().Lookup("yes") == nil {
+					t.Errorf("write leaf %q has --permanent without --yes", path)
+				}
+			})
+		}
+	}
+}
+
+func TestResourceLeavesHaveNoJSONFlag(t *testing.T) {
+	t.Parallel()
+	roots := domainCommands()
+	for domain, pair := range writeCommandPairs {
+		roots["grw "+domain] = pair.write()
+	}
+	for name, cmd := range roots {
+		for _, leaf := range leafCommands(cmd, name) {
+			leaf := leaf
+			t.Run(leaf.path, func(t *testing.T) {
+				t.Parallel()
+				if leaf.cmd.Flags().Lookup("json") != nil {
+					t.Errorf("resource leaf %q must not declare --json (see docs/golden-principles.md and cli-common output-and-rendering §2)", leaf.path)
+				}
+			})
+		}
+	}
+}
+
 func TestResourceLeaf_RejectsJSON_EndToEnd(t *testing.T) {
 	t.Parallel()
 	cmd := drivecmd.NewCommand()
@@ -253,23 +389,14 @@ func TestResourceLeaf_RejectsJSON_EndToEnd(t *testing.T) {
 	cmd.SilenceErrors = true
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("gro drive drives --json should error, got nil")
-	}
-	if !strings.Contains(err.Error(), "unknown flag") {
-		t.Fatalf("expected 'unknown flag' error, got: %v", err)
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("expected unknown flag error, got %v", err)
 	}
 }
 
-// Dependency-direction invariants (API clients never import cmd; auth never
-// imports API clients) are covered by the internal packages' structural tests.
-
-// allowedScopes is the set of OAuth scopes permitted in groapp.Scopes.
-// Read-only scopes are always safe. Non-readonly scopes are allowed only when
-// they enable non-destructive organizational operations (label, archive, star, etc.)
-// without granting send or delete access.
+// allowedScopes are the only OAuth scopes gro may request. The non-readonly
+// entries are included because they enable organizational operations (label,
+// archive, star, RSVP) without granting send or delete access.
 var allowedScopes = map[string]bool{
 	"https://www.googleapis.com/auth/gmail.readonly":    true,
 	"https://www.googleapis.com/auth/gmail.modify":      true, // label, archive, star, read/unread (NOT send/delete)
@@ -277,26 +404,136 @@ var allowedScopes = map[string]bool{
 	"https://www.googleapis.com/auth/calendar.events":   true, // RSVP, color (NOT calendar settings)
 	"https://www.googleapis.com/auth/contacts.readonly": true,
 	"https://www.googleapis.com/auth/contacts":          true, // group membership, starring (NOT create/delete contacts)
-	"https://www.googleapis.com/auth/userinfo.profile":  true, // read authenticated user's name/email for people/me (NOT contacts list)
+	"https://www.googleapis.com/auth/userinfo.profile":  true, // authenticated user's name/email for `me` (NOT contacts list)
 	"https://www.googleapis.com/auth/drive.readonly":    true,
 	"https://www.googleapis.com/auth/drive.metadata":    true, // star/unstar files (NOT file content write)
 }
 
-// TestAllScopesAreNonDestructive verifies that every OAuth scope in
-// groapp.Scopes is in the allowlist of non-destructive scopes. This is the
-// structural guarantee that keeps gro non-destructive: the scope set it
-// registers can never include gmail.settings.* or https://mail.google.com/
-// (which would permit filters or permanent deletion).
+var knownGrwScopes = map[string]bool{
+	"https://www.googleapis.com/auth/gmail.readonly":       true,
+	"https://www.googleapis.com/auth/gmail.modify":         true,
+	"https://www.googleapis.com/auth/calendar.readonly":    true,
+	"https://www.googleapis.com/auth/calendar.events":      true,
+	"https://www.googleapis.com/auth/contacts.readonly":    true,
+	"https://www.googleapis.com/auth/contacts":             true,
+	"https://www.googleapis.com/auth/userinfo.profile":     true,
+	"https://www.googleapis.com/auth/drive.readonly":       true,
+	"https://www.googleapis.com/auth/drive.metadata":       true,
+	"https://www.googleapis.com/auth/gmail.settings.basic": true,
+	"https://mail.google.com/":                             true,
+}
+
+// TestAllScopesAreNonDestructive is the structural guarantee that keeps gro
+// non-destructive: the scope set it registers can never include
+// gmail.settings.* or https://mail.google.com/ (which would permit filters or
+// permanent deletion).
 func TestAllScopesAreNonDestructive(t *testing.T) {
 	t.Parallel()
-
-	if len(groapp.Scopes) == 0 {
-		t.Fatal("groapp.Scopes must not be empty")
+	scopes := groapp.Identity().Scopes
+	if len(scopes) == 0 {
+		t.Fatal("gro scopes must not be empty")
 	}
-
-	for _, scope := range groapp.Scopes {
+	for _, scope := range scopes {
 		if !allowedScopes[scope] {
 			t.Errorf("scope %q is not in the non-destructive allowlist; update allowedScopes if this scope is safe", scope)
+		}
+	}
+}
+
+func scopeService(scope string) string {
+	const marker = "/auth/"
+	_, suffix, ok := strings.Cut(scope, marker)
+	if !ok {
+		return ""
+	}
+	service, _, _ := strings.Cut(suffix, ".")
+	return service
+}
+
+func TestGrwScopesCoverGroPerService(t *testing.T) {
+	t.Parallel()
+	grwScopes := grwapp.Identity().Scopes
+	grwSet, services := map[string]bool{}, map[string]bool{}
+	for _, scope := range grwScopes {
+		grwSet[scope] = true
+		if service := scopeService(scope); service != "" {
+			services[service] = true
+		}
+	}
+	for _, scope := range groapp.Identity().Scopes {
+		if services[scopeService(scope)] && !grwSet[scope] {
+			t.Errorf("grw scopes include service %q but omit gro scope %q", scopeService(scope), scope)
+		}
+	}
+}
+
+func TestGrwScopesAreKnown(t *testing.T) {
+	t.Parallel()
+	scopes := grwapp.Identity().Scopes
+	if len(scopes) == 0 {
+		t.Fatal("grw scopes must not be empty")
+	}
+	for _, scope := range scopes {
+		if !knownGrwScopes[scope] {
+			t.Errorf("grw scope %q is not in the known allowlist", scope)
+		}
+	}
+}
+
+type listedPackage struct {
+	ImportPath string
+	Dir        string
+	GoFiles    []string
+	Module     *struct{ Path string }
+}
+
+func goListDeps(t *testing.T, target string) []listedPackage {
+	t.Helper()
+	cmd := exec.Command("go", "list", "-deps", "-json", target)
+	cmd.Dir = repoRoot(t)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list %s: %v\n%s", target, err, stderr.String())
+	}
+	decoder := json.NewDecoder(bytes.NewReader(out))
+	var packages []listedPackage
+	for {
+		var pkg listedPackage
+		if err := decoder.Decode(&pkg); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatalf("decode go list %s: %v", target, err)
+		}
+		packages = append(packages, pkg)
+	}
+	return packages
+}
+
+func TestGroNeverLinksWriteCode(t *testing.T) {
+	t.Parallel()
+	for _, pkg := range goListDeps(t, "./cmd/gro") {
+		if strings.HasPrefix(pkg.ImportPath, modulePath+"/internal/rw/") || strings.HasPrefix(pkg.ImportPath, modulePath+"/internal/rwcmd/") {
+			t.Errorf("gro links write package %s", pkg.ImportPath)
+		}
+	}
+}
+
+func TestGrwLinksWriteCode(t *testing.T) {
+	t.Parallel()
+	want := map[string]bool{
+		modulePath + "/internal/rw/gmail":   false,
+		modulePath + "/internal/rwcmd/mail": false,
+	}
+	for _, pkg := range goListDeps(t, "./cmd/grw") {
+		if _, ok := want[pkg.ImportPath]; ok {
+			want[pkg.ImportPath] = true
+		}
+	}
+	for pkg, found := range want {
+		if !found {
+			t.Errorf("grw does not link required write package %s", pkg)
 		}
 	}
 }
@@ -304,74 +541,34 @@ func TestAllScopesAreNonDestructive(t *testing.T) {
 // forbiddenAPIPatterns are the Google API client method calls gro must never
 // make. They are specific to the Google client libraries and unlikely to
 // appear in other contexts; generic names like .Delete() or .Insert() are
-// intentionally excluded to avoid false positives. .BatchModify( is allowed —
-// it backs bulk label/archive operations.
-var forbiddenAPIPatterns = []string{
-	".Send(",
-	".Trash(",
-	".Untrash(",
-	".BatchDelete(",
-}
+// intentionally excluded to avoid false positives. .BatchModify( is allowed
+// because it backs bulk label/archive operations.
+var forbiddenAPIPatterns = []string{".Send(", ".Trash(", ".Untrash(", ".BatchDelete("}
 
-// TestNoDestructiveAPIMethodsInProductionCode scans gro's non-test Go source
-// files for destructive Google API method calls.
+// TestNoDestructiveAPIMethodsInProductionCode scans every in-module package
+// that gro links (including internal/api/*) for the forbidden calls. Scoping
+// the scan to gro's link graph is deliberate: internal/rw/* legitimately calls
+// these methods, and TestGroNeverLinksWriteCode proves gro cannot reach it.
 func TestNoDestructiveAPIMethodsInProductionCode(t *testing.T) {
 	t.Parallel()
-	root := findModuleRoot(t)
-	scanForForbiddenAPIMethods(t, filepath.Join(root, "internal", "app", "gro"))
-	scanForForbiddenAPIMethods(t, filepath.Join(root, "internal", "cmd"))
-}
-
-// apiClientPackages are the Google API client packages gro links. The
-// destructive Gmail surface belongs to internal/rw/gmail, never to these.
-var apiClientPackages = []string{"gmail", "calendar", "contacts", "drive", "people"}
-
-// TestSharedGoogleClientsAreNonDestructive extends the scan to the API
-// client packages, so a destructive method added there (e.g. via a shared
-// batch helper) fails gro's build instead of silently shipping.
-func TestSharedGoogleClientsAreNonDestructive(t *testing.T) {
-	t.Parallel()
 	root := repoRoot(t)
-	for _, pkg := range apiClientPackages {
-		scanForForbiddenAPIMethods(t, filepath.Join(root, "internal", "api", pkg))
-	}
-}
-
-// scanForForbiddenAPIMethods walks root and reports every non-test Go file
-// containing one of forbiddenAPIPatterns.
-func scanForForbiddenAPIMethods(t *testing.T, root string) {
-	t.Helper()
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
+	for _, pkg := range goListDeps(t, "./cmd/gro") {
+		if pkg.Module == nil || pkg.Module.Path != modulePath {
+			continue
 		}
-		if d.IsDir() {
-			name := d.Name()
-			if name == "vendor" || name == ".git" || name == "dist" || name == "bin" {
-				return filepath.SkipDir
+		for _, name := range pkg.GoFiles {
+			path := filepath.Join(pkg.Dir, name)
+			data, err := os.ReadFile(path) //nolint:gosec // package paths come from go list
+			if err != nil {
+				t.Errorf("read %s: %v", path, err)
+				continue
 			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-
-		data, readErr := os.ReadFile(path) //nolint:gosec // repo-local test input
-		if readErr != nil {
-			t.Errorf("reading %s: %v", path, readErr)
-			return nil
-		}
-		content := string(data)
-		rel, _ := filepath.Rel(root, path)
-
-		for _, pattern := range forbiddenAPIPatterns {
-			if strings.Contains(content, pattern) {
-				t.Errorf("file %s contains forbidden destructive API method %q — this CLI only allows non-destructive operations", rel, pattern)
+			for _, pattern := range forbiddenAPIPatterns {
+				if strings.Contains(string(data), pattern) {
+					rel, _ := filepath.Rel(root, path)
+					t.Errorf("%s contains forbidden destructive API method %q; gro only allows non-destructive operations", rel, pattern)
+				}
 			}
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking source tree %s: %v", root, err)
 	}
 }

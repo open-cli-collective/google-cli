@@ -10,6 +10,7 @@ import (
 
 	gmailv1 "google.golang.org/api/gmail/v1"
 
+	mailcmd "github.com/open-cli-collective/google-cli/internal/cmd/mail"
 	gmailrw "github.com/open-cli-collective/google-cli/internal/rw/gmail"
 )
 
@@ -17,10 +18,7 @@ import (
 // is satisfied by *gmailrw.Client (which embeds the shared read/organize
 // client, so the message-search and label-resolution reads come for free).
 type WriteClient interface {
-	SearchMessageIDs(ctx context.Context, query string, maxResults int64) ([]string, error)
-	FetchLabels(ctx context.Context) error
-	GetLabels() []*gmailv1.Label
-	GetLabelID(ctx context.Context, name string) (string, error)
+	mailcmd.MailClient
 
 	TrashMessages(ctx context.Context, ids []string) error
 	UntrashMessages(ctx context.Context, ids []string) error

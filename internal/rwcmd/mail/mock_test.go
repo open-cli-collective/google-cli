@@ -4,11 +4,14 @@ import (
 	"context"
 
 	gmailv1 "google.golang.org/api/gmail/v1"
+
+	mailcmd "github.com/open-cli-collective/google-cli/internal/cmd/mail"
 )
 
 // mockWriteClient is a function-field mock of WriteClient. Unset fields return
 // zero values, so each test wires only the methods it exercises.
 type mockWriteClient struct {
+	mailcmd.MailClient
 	SearchMessageIDsFunc          func(ctx context.Context, query string, maxResults int64) ([]string, error)
 	FetchLabelsFunc               func(ctx context.Context) error
 	GetLabelsFunc                 func() []*gmailv1.Label

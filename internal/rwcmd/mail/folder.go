@@ -23,11 +23,16 @@ e.g. "Receipts/2026" nests "2026" under "Receipts".`,
 }
 
 func newFolderCreateCommand() *cobra.Command {
-	return &cobra.Command{
+	var dryRun bool
+	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a label (use \"Parent/Child\" for a subfolder)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun {
+				fmt.Printf("[dry-run] Would create folder %q.\n", args[0])
+				return nil
+			}
 			ctx := cmd.Context()
 			client, err := newWriteClient(ctx)
 			if err != nil {
@@ -41,14 +46,21 @@ func newFolderCreateCommand() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview without making changes")
+	return cmd
 }
 
 func newFolderRenameCommand() *cobra.Command {
-	return &cobra.Command{
+	var dryRun bool
+	cmd := &cobra.Command{
 		Use:   "rename <current-name> <new-name>",
 		Short: "Rename or re-nest a label",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun {
+				fmt.Printf("[dry-run] Would rename folder %q to %q.\n", args[0], args[1])
+				return nil
+			}
 			ctx := cmd.Context()
 			client, err := newWriteClient(ctx)
 			if err != nil {
@@ -66,15 +78,22 @@ func newFolderRenameCommand() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview without making changes")
+	return cmd
 }
 
 func newFolderRemoveCommand() *cobra.Command {
-	return &cobra.Command{
+	var dryRun bool
+	cmd := &cobra.Command{
 		Use:     "rm <name>",
 		Aliases: []string{"delete", "remove"},
 		Short:   "Delete a label (messages keep their content; they just lose the label)",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun {
+				fmt.Printf("[dry-run] Would delete folder %q.\n", args[0])
+				return nil
+			}
 			ctx := cmd.Context()
 			client, err := newWriteClient(ctx)
 			if err != nil {
@@ -91,4 +110,6 @@ func newFolderRemoveCommand() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview without making changes")
+	return cmd
 }

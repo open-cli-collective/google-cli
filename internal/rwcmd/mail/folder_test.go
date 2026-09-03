@@ -34,6 +34,23 @@ func TestFolder_Create(t *testing.T) {
 	}
 }
 
+func TestFolder_CreateDryRun(t *testing.T) {
+	mock := &mockWriteClient{CreateLabelFunc: func(context.Context, string) (*gmailv1.Label, error) {
+		t.Fatal("dry-run must not create a folder")
+		return nil, nil
+	}}
+	withMockClient(mock, func() {
+		out := testutil.CaptureStdout(t, func() {
+			if _, err := runCmd(newFolderCreateCommand(), "Receipts", "--dry-run"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if !strings.Contains(out, `[dry-run] Would create folder "Receipts".`) {
+			t.Errorf("output %q missing dry-run line", out)
+		}
+	})
+}
+
 func TestFolder_Rename(t *testing.T) {
 	var gotID, gotNew string
 	mock := &mockWriteClient{
@@ -60,6 +77,29 @@ func TestFolder_Rename(t *testing.T) {
 	}
 }
 
+func TestFolder_RenameDryRun(t *testing.T) {
+	mock := &mockWriteClient{
+		GetLabelIDFunc: func(context.Context, string) (string, error) {
+			t.Fatal("dry-run must not resolve a folder")
+			return "", nil
+		},
+		RenameLabelFunc: func(context.Context, string, string) (*gmailv1.Label, error) {
+			t.Fatal("dry-run must not rename a folder")
+			return nil, nil
+		},
+	}
+	withMockClient(mock, func() {
+		out := testutil.CaptureStdout(t, func() {
+			if _, err := runCmd(newFolderRenameCommand(), "Old", "New", "-n"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if !strings.Contains(out, `[dry-run] Would rename folder "Old" to "New".`) {
+			t.Errorf("output %q missing dry-run line", out)
+		}
+	})
+}
+
 func TestFolder_Remove(t *testing.T) {
 	var deletedID string
 	mock := &mockWriteClient{
@@ -76,4 +116,27 @@ func TestFolder_Remove(t *testing.T) {
 	if deletedID != "Label_7" {
 		t.Fatalf("DeleteLabel(id=%q), want Label_7", deletedID)
 	}
+}
+
+func TestFolder_RemoveDryRun(t *testing.T) {
+	mock := &mockWriteClient{
+		GetLabelIDFunc: func(context.Context, string) (string, error) {
+			t.Fatal("dry-run must not resolve a folder")
+			return "", nil
+		},
+		DeleteLabelFunc: func(context.Context, string) error {
+			t.Fatal("dry-run must not delete a folder")
+			return nil
+		},
+	}
+	withMockClient(mock, func() {
+		out := testutil.CaptureStdout(t, func() {
+			if _, err := runCmd(newFolderRemoveCommand(), "Junk", "--dry-run"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if !strings.Contains(out, `[dry-run] Would delete folder "Junk".`) {
+			t.Errorf("output %q missing dry-run line", out)
+		}
+	})
 }
