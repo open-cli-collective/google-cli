@@ -26,6 +26,8 @@ Enforced by `TestWriteClientsEmbedReadClients`, `TestWriteCommandClientsEmbedRea
 
 Every leaf added by a write command declares boolean `--dry-run` with shorthand `-n`. The read verbs `list`, `get`, `show`, and `search` are exempt. A command exposing `--permanent` must also expose `--yes`; recoverable behavior remains the default.
 
+Confirmation is reserved for unrecoverable data loss. Actions that are irreversible but not destructive, such as `grw mail send`, take an explicit ID, print what will happen, and proceed; `--dry-run` is the review step, and a prompt would only break the piping and agent flows grw exists for.
+
 Enforced by `TestWriteLeavesHaveDryRun` and `TestPermanentWriteLeavesRequireYes`. `TestDelete_DryRunDoesNotMutate` and `TestDelete_PermanentWithYes` verify behavior.
 
 ## 5. Resource leaves are text-only
