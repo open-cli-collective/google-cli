@@ -1,8 +1,16 @@
 package contacts
 
 import (
+	"strings"
+	"time"
+
 	"google.golang.org/api/people/v1"
 )
+
+var updatePersonFields = []string{
+	"names", "emailAddresses", "phoneNumbers", "organizations",
+	"addresses", "urls", "biographies", "birthdays",
+}
 
 // Contact represents a simplified contact for output
 type Contact struct {
@@ -189,6 +197,89 @@ func ParseContact(p *people.Person) *Contact {
 	}
 
 	return contact
+}
+
+// ToPerson converts a Contact to the writable People API fields.
+func ToPerson(c *Contact) *people.Person {
+	if c == nil {
+		return nil
+	}
+	p := &people.Person{}
+	for _, name := range c.Names {
+		p.Names = append(p.Names, &people.Name{
+			DisplayName: name.DisplayName, GivenName: name.GivenName, FamilyName: name.FamilyName,
+			MiddleName: name.MiddleName, HonorificPrefix: name.HonorificPrefix,
+			HonorificSuffix: name.HonorificSuffix, PhoneticFullName: name.PhoneticFullName,
+		})
+	}
+	for _, email := range c.Emails {
+		p.EmailAddresses = append(p.EmailAddresses, &people.EmailAddress{
+			Value: email.Value, Type: email.Type, DisplayName: email.DisplayName,
+			Metadata: &people.FieldMetadata{Primary: email.Primary},
+		})
+	}
+	for _, phone := range c.Phones {
+		p.PhoneNumbers = append(p.PhoneNumbers, &people.PhoneNumber{Value: phone.Value, Type: phone.Type})
+	}
+	for _, organization := range c.Organizations {
+		p.Organizations = append(p.Organizations, &people.Organization{
+			Name: organization.Name, Title: organization.Title,
+			Department: organization.Department, Type: organization.Type,
+		})
+	}
+	for _, address := range c.Addresses {
+		p.Addresses = append(p.Addresses, &people.Address{
+			FormattedValue: address.FormattedValue, Type: address.Type, City: address.City,
+			Region: address.Region, PostalCode: address.PostalCode, Country: address.Country,
+		})
+	}
+	for _, url := range c.URLs {
+		p.Urls = append(p.Urls, &people.Url{Value: url.Value, Type: url.Type})
+	}
+	if c.Biography != "" {
+		p.Biographies = []*people.Biography{{Value: c.Biography}}
+	}
+	if date := parseBirthday(c.Birthday); date != nil {
+		p.Birthdays = []*people.Birthday{{Date: date}}
+	}
+	return p
+}
+
+// PersonUpdateMask returns the People API field groups present in c.
+func PersonUpdateMask(c *Contact) string {
+	if c == nil {
+		return ""
+	}
+	present := []bool{
+		len(c.Names) > 0, len(c.Emails) > 0, len(c.Phones) > 0, len(c.Organizations) > 0,
+		len(c.Addresses) > 0, len(c.URLs) > 0, c.Biography != "", c.Birthday != "",
+	}
+	fields := make([]string, 0, len(updatePersonFields))
+	for i, field := range updatePersonFields {
+		if present[i] {
+			fields = append(fields, field)
+		}
+	}
+	return strings.Join(fields, ",")
+}
+
+func parseBirthday(value string) *people.Date {
+	if value == "" {
+		return nil
+	}
+	value = strings.TrimPrefix(value, "--")
+	if len(value) == len("01-02") {
+		date, err := time.Parse("2006-01-02", "2000-"+value)
+		if err != nil {
+			return nil
+		}
+		return &people.Date{Month: int64(date.Month()), Day: int64(date.Day())}
+	}
+	date, err := time.Parse(time.DateOnly, value)
+	if err != nil {
+		return nil
+	}
+	return &people.Date{Year: int64(date.Year()), Month: int64(date.Month()), Day: int64(date.Day())}
 }
 
 // ParseContactGroup converts a People API ContactGroup to our ContactGroup type
