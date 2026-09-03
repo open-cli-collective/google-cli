@@ -83,13 +83,39 @@ Examples:
 				return fmt.Errorf("resolving download directory: %w", err)
 			}
 
-			// Download each attachment
+			// Download each attachment. Gmail commonly gives pasted inline images
+			// the same filename, so preserve all of them with stable suffixes.
+			reservedNames := make(map[string]bool, len(toDownload))
 			for _, att := range toDownload {
+				reservedNames[att.Filename] = true
+			}
+			usedNames := make(map[string]bool, len(toDownload))
+			nextSuffix := make(map[string]int)
+			for _, att := range toDownload {
+				downloadName := att.Filename
+				if usedNames[downloadName] {
+					ext := filepath.Ext(att.Filename)
+					base := strings.TrimSuffix(att.Filename, ext)
+					suffix := nextSuffix[att.Filename]
+					if suffix < 2 {
+						suffix = 2
+					}
+					for {
+						downloadName = fmt.Sprintf("%s-%d%s", base, suffix, ext)
+						suffix++
+						if !usedNames[downloadName] && !reservedNames[downloadName] {
+							break
+						}
+					}
+					nextSuffix[att.Filename] = suffix
+				}
+				usedNames[downloadName] = true
+
 				// Sanitize filename for display to prevent terminal injection
-				safeFilename := SanitizeFilename(att.Filename)
+				safeFilename := SanitizeFilename(downloadName)
 
 				// Security: Validate output path to prevent path traversal attacks
-				outputPath, err := safeOutputPath(absOutputDir, att.Filename)
+				outputPath, err := safeOutputPath(absOutputDir, downloadName)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Skipping %s: %v\n", safeFilename, err)
 					continue
@@ -109,9 +135,9 @@ Examples:
 				fmt.Printf("Downloaded: %s (%s)\n", outputPath, format.Size(int64(len(data))))
 
 				// Extract if zip and --extract flag
-				if extract && isZipFile(att.Filename, att.MimeType) {
+				if extract && isZipFile(downloadName, att.MimeType) {
 					extractDir := filepath.Join(outputDir,
-						strings.TrimSuffix(att.Filename, filepath.Ext(att.Filename)))
+						strings.TrimSuffix(downloadName, filepath.Ext(downloadName)))
 					if err := ziputil.Extract(outputPath, extractDir, ziputil.DefaultOptions()); err != nil {
 						fmt.Fprintf(os.Stderr, "Error extracting %s: %v\n", safeFilename, err)
 					} else {
