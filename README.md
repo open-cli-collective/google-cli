@@ -29,6 +29,8 @@ brew install open-cli-collective/tap/google-readonly
 brew install open-cli-collective/tap/google-readwrite
 ```
 
+`gro` keeps the `google-readonly` package IDs it has always shipped under; `grw` uses its short name everywhere.
+
 ### Chocolatey
 
 ```powershell
