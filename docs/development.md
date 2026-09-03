@@ -67,4 +67,22 @@ There is one release stream for both binaries. `version.txt` contains the major/
 
 Each tag publishes both binaries and their platform archives through the shared release automation. Homebrew, Chocolatey, WinGet, and Linux package publication fan out from that release. Follow the [release](https://github.com/open-cli-collective/cli-common/blob/main/docs/release.md) and [distribution](https://github.com/open-cli-collective/cli-common/blob/main/docs/distribution.md) standards rather than duplicating workflow policy here.
 
+### Packaging identity
+
+`packaging/identity.yml` (schema `open-cli-identity/v1`, described in the cli-common
+[distribution](https://github.com/open-cli-collective/cli-common/blob/main/docs/distribution.md)
+standard) declares both binaries once so the shared automation can validate, build, sign, and
+publish them without per-repo workflow logic. Naming follows one rule: `gro` keeps every identifier
+it shipped under before the merge (`google-readonly` on Chocolatey, WinGet, Linux, and as a tap
+alias) because package registries cannot rename an existing package without breaking upgrades;
+`grw` is new, so it is canonical under its short name and only carries `google-readwrite` as a tap
+alias. Each binary's `keychain_probe` runs the freshly built macOS binary against a seeded config
+and asserts it selects the Keychain backend, which catches a static or mis-tagged build before it
+is published.
+
+`version.txt` holds only `MAJOR.MINOR`; the `major_minor_run_patch` scheme appends the workflow
+run number, so tags are `v1.2.N` and never collide or need a bump commit. The stream starts at
+`1.2` because `gro` had already released `1.1.x`; continuing its line keeps upgrades monotonic for
+existing installs.
+
 Use a focused branch, run `make check`, and open a pull request. Keep the pull-request title in conventional-commit form because squash merge makes that title the commit on `main` and therefore the release signal.
