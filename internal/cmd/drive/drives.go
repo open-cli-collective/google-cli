@@ -11,6 +11,7 @@ import (
 
 	"github.com/open-cli-collective/google-cli/internal/api/drive"
 	"github.com/open-cli-collective/google-cli/internal/cache"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 func newDrivesCommand() *cobra.Command {
@@ -102,7 +103,7 @@ func printSharedDrives(drives []*drive.SharedDrive) {
 	_, _ = fmt.Fprintln(w, "ID\tNAME")
 
 	for _, d := range drives {
-		_, _ = fmt.Fprintf(w, "%s\t%s\n", d.ID, d.Name)
+		_, _ = fmt.Fprintf(w, "%s\t%s\n", d.ID, sanitize.Output(d.Name))
 	}
 
 	_ = w.Flush()

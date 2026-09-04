@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // newFolderCommand groups the label-lifecycle operations. In Gmail a "folder"
@@ -42,7 +44,7 @@ func newFolderCreateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Created folder %q (id %s).\n", label.Name, label.Id)
+			fmt.Printf("Created folder %q (id %s).\n", sanitize.Output(label.Name), label.Id)
 			return nil
 		},
 	}
@@ -74,7 +76,7 @@ func newFolderRenameCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Renamed folder to %q.\n", label.Name)
+			fmt.Printf("Renamed folder to %q.\n", sanitize.Output(label.Name))
 			return nil
 		},
 	}

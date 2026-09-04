@@ -7,6 +7,7 @@ import (
 	calendarapi "github.com/open-cli-collective/google-cli/internal/api/calendar"
 	calendarcmd "github.com/open-cli-collective/google-cli/internal/cmd/calendar"
 	calendarrw "github.com/open-cli-collective/google-cli/internal/rw/calendar"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // WriteClient is the Calendar surface used by grw commands.
@@ -29,7 +30,7 @@ func printEvent(event *calendarapi.Event) {
 		fmt.Printf("ID: %s\n", event.ID)
 	}
 	if event.Summary != "" {
-		fmt.Printf("Summary: %s\n", event.Summary)
+		fmt.Printf("Summary: %s\n", sanitize.Output(event.Summary))
 	}
 	if event.Start != nil {
 		fmt.Printf("Start: %s\n", eventTimeValue(event.Start))
@@ -38,13 +39,13 @@ func printEvent(event *calendarapi.Event) {
 		fmt.Printf("End: %s\n", eventTimeValue(event.End))
 	}
 	if event.Location != "" {
-		fmt.Printf("Location: %s\n", event.Location)
+		fmt.Printf("Location: %s\n", sanitize.Output(event.Location))
 	}
 	if event.Description != "" {
-		fmt.Printf("Description: %s\n", event.Description)
+		fmt.Printf("Description: %s\n", sanitize.Output(event.Description))
 	}
 	for _, attendee := range event.Attendees {
-		fmt.Printf("Attendee: %s\n", attendee.Email)
+		fmt.Printf("Attendee: %s\n", sanitize.Output(attendee.Email))
 	}
 }
 

@@ -1,4 +1,4 @@
-package mail
+package sanitize
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/testutil"
 )
 
-func TestSanitizeOutput(t *testing.T) {
+func TestOutput(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -123,13 +123,13 @@ func TestSanitizeOutput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			result := SanitizeOutput(tt.input)
+			result := Output(tt.input)
 			testutil.Equal(t, result, tt.expected)
 		})
 	}
 }
 
-func TestSanitizeFilename(t *testing.T) {
+func TestFilename(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -186,13 +186,13 @@ func TestSanitizeFilename(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			result := SanitizeFilename(tt.input)
+			result := Filename(tt.input)
 			testutil.Equal(t, result, tt.expected)
 		})
 	}
 }
 
-func TestSanitizeOutput_RealWorldExamples(t *testing.T) {
+func TestOutput_RealWorldExamples(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -219,7 +219,7 @@ func TestSanitizeOutput_RealWorldExamples(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			result := SanitizeOutput(tt.input)
+			result := Output(tt.input)
 			testutil.Equal(t, result, tt.expected)
 		})
 	}

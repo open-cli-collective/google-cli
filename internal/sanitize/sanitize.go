@@ -1,4 +1,5 @@
-package mail
+// Package sanitize removes terminal control sequences from untrusted text.
+package sanitize
 
 import (
 	"regexp"
@@ -15,10 +16,10 @@ var ansiEscapeRegex = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*\
 // excluding common whitespace (tab, newline, carriage return)
 var controlCharRegex = regexp.MustCompile(`[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]`)
 
-// SanitizeOutput removes ANSI escape sequences and dangerous control characters
+// Output removes ANSI escape sequences and dangerous control characters
 // from a string to prevent terminal injection attacks. Safe whitespace characters
 // (tab, newline, carriage return) are preserved.
-func SanitizeOutput(s string) string {
+func Output(s string) string {
 	// Remove ANSI escape sequences
 	s = ansiEscapeRegex.ReplaceAllString(s, "")
 
@@ -28,11 +29,11 @@ func SanitizeOutput(s string) string {
 	return s
 }
 
-// SanitizeFilename sanitizes a filename for display, removing potentially
+// Filename sanitizes a filename for display, removing potentially
 // dangerous characters while preserving readability.
-func SanitizeFilename(s string) string {
+func Filename(s string) string {
 	// First apply general output sanitization
-	s = SanitizeOutput(s)
+	s = Output(s)
 
 	// Additionally handle Unicode direction overrides that could be used
 	// to disguise file extensions (e.g., making "evil.exe" appear as "exe.live")

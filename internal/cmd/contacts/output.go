@@ -7,6 +7,7 @@ import (
 	"google.golang.org/api/people/v1"
 
 	"github.com/open-cli-collective/google-cli/internal/api/contacts"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // ContactsClient defines the interface for Contacts client operations used by contacts commands.
@@ -35,18 +36,18 @@ func newContactsClient(ctx context.Context) (ContactsClient, error) {
 // printContact prints a single contact in text format
 func printContact(contact *contacts.Contact, showDetails bool) {
 	fmt.Printf("ID: %s\n", contact.ResourceName)
-	fmt.Printf("Name: %s\n", contact.GetDisplayName())
+	fmt.Printf("Name: %s\n", sanitize.Output(contact.GetDisplayName()))
 
 	if email := contact.GetPrimaryEmail(); email != "" {
-		fmt.Printf("Email: %s\n", email)
+		fmt.Printf("Email: %s\n", sanitize.Output(email))
 	}
 
 	if phone := contact.GetPrimaryPhone(); phone != "" {
-		fmt.Printf("Phone: %s\n", phone)
+		fmt.Printf("Phone: %s\n", sanitize.Output(phone))
 	}
 
 	if org := contact.GetOrganization(); org != "" {
-		fmt.Printf("Organization: %s\n", org)
+		fmt.Printf("Organization: %s\n", sanitize.Output(org))
 	}
 
 	if showDetails {
@@ -62,7 +63,7 @@ func printContact(contact *contacts.Contact, showDetails bool) {
 				if e.Type != "" {
 					typeStr = fmt.Sprintf(" [%s]", e.Type)
 				}
-				fmt.Printf("  - %s%s%s\n", e.Value, typeStr, primary)
+				fmt.Printf("  - %s%s%s\n", sanitize.Output(e.Value), typeStr, primary)
 			}
 		}
 
@@ -74,7 +75,7 @@ func printContact(contact *contacts.Contact, showDetails bool) {
 				if p.Type != "" {
 					typeStr = fmt.Sprintf(" [%s]", p.Type)
 				}
-				fmt.Printf("  - %s%s\n", p.Value, typeStr)
+				fmt.Printf("  - %s%s\n", sanitize.Output(p.Value), typeStr)
 			}
 		}
 
@@ -83,16 +84,16 @@ func printContact(contact *contacts.Contact, showDetails bool) {
 			fmt.Println("Organizations:")
 			for _, o := range contact.Organizations {
 				if o.Name != "" {
-					fmt.Printf("  - %s", o.Name)
+					fmt.Printf("  - %s", sanitize.Output(o.Name))
 					if o.Title != "" {
-						fmt.Printf(" (%s)", o.Title)
+						fmt.Printf(" (%s)", sanitize.Output(o.Title))
 					}
 					if o.Department != "" {
-						fmt.Printf(" - %s", o.Department)
+						fmt.Printf(" - %s", sanitize.Output(o.Department))
 					}
 					fmt.Println()
 				} else if o.Title != "" {
-					fmt.Printf("  - %s\n", o.Title)
+					fmt.Printf("  - %s\n", sanitize.Output(o.Title))
 				}
 			}
 		}
@@ -105,7 +106,7 @@ func printContact(contact *contacts.Contact, showDetails bool) {
 				if a.Type != "" {
 					typeStr = fmt.Sprintf("[%s] ", a.Type)
 				}
-				fmt.Printf("  - %s%s\n", typeStr, a.FormattedValue)
+				fmt.Printf("  - %s%s\n", typeStr, sanitize.Output(a.FormattedValue))
 			}
 		}
 
@@ -117,20 +118,20 @@ func printContact(contact *contacts.Contact, showDetails bool) {
 				if u.Type != "" {
 					typeStr = fmt.Sprintf("[%s] ", u.Type)
 				}
-				fmt.Printf("  - %s%s\n", typeStr, u.Value)
+				fmt.Printf("  - %s%s\n", typeStr, sanitize.Output(u.Value))
 			}
 		}
 
 		// Show birthday
 		if contact.Birthday != "" {
-			fmt.Printf("Birthday: %s\n", contact.Birthday)
+			fmt.Printf("Birthday: %s\n", sanitize.Output(contact.Birthday))
 		}
 
 		// Show biography
 		if contact.Biography != "" {
 			fmt.Println()
 			fmt.Println("--- Biography ---")
-			fmt.Println(contact.Biography)
+			fmt.Println(sanitize.Output(contact.Biography))
 		}
 	}
 }
@@ -138,18 +139,18 @@ func printContact(contact *contacts.Contact, showDetails bool) {
 // printContactSummary prints a brief contact summary for list views
 func printContactSummary(contact *contacts.Contact) {
 	fmt.Printf("ID: %s\n", contact.ResourceName)
-	fmt.Printf("Name: %s\n", contact.GetDisplayName())
+	fmt.Printf("Name: %s\n", sanitize.Output(contact.GetDisplayName()))
 
 	if email := contact.GetPrimaryEmail(); email != "" {
-		fmt.Printf("Email: %s\n", email)
+		fmt.Printf("Email: %s\n", sanitize.Output(email))
 	}
 
 	if phone := contact.GetPrimaryPhone(); phone != "" {
-		fmt.Printf("Phone: %s\n", phone)
+		fmt.Printf("Phone: %s\n", sanitize.Output(phone))
 	}
 
 	if org := contact.GetOrganization(); org != "" {
-		fmt.Printf("Organization: %s\n", org)
+		fmt.Printf("Organization: %s\n", sanitize.Output(org))
 	}
 
 	fmt.Println("---")
@@ -158,9 +159,9 @@ func printContactSummary(contact *contacts.Contact) {
 // printContactGroup prints a contact group
 func printContactGroup(group *contacts.ContactGroup) {
 	fmt.Printf("ID: %s\n", group.ResourceName)
-	fmt.Printf("Name: %s\n", group.Name)
+	fmt.Printf("Name: %s\n", sanitize.Output(group.Name))
 	if group.GroupType != "" {
-		fmt.Printf("Type: %s\n", group.GroupType)
+		fmt.Printf("Type: %s\n", sanitize.Output(group.GroupType))
 	}
 	fmt.Printf("Members: %d\n", group.MemberCount)
 	fmt.Println("---")

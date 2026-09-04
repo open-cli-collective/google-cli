@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-cli-collective/google-cli/internal/format"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 func newListAttachmentsCommand() *cobra.Command {
@@ -38,7 +39,7 @@ Examples:
 			fmt.Printf("Found %d attachment(s):\n\n", len(attachments))
 			for i, att := range attachments {
 				// Sanitize filename to prevent terminal injection from malicious attachment names
-				fmt.Printf("%d. %s\n", i+1, SanitizeFilename(att.Filename))
+				fmt.Printf("%d. %s\n", i+1, sanitize.Filename(att.Filename))
 				fmt.Printf("   Type: %s\n", att.MimeType)
 				fmt.Printf("   Size: %s\n", format.Size(att.Size))
 				if att.IsInline {

@@ -8,6 +8,7 @@ import (
 	gmailv1 "google.golang.org/api/gmail/v1"
 
 	"github.com/open-cli-collective/google-cli/internal/api/gmail"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // MailClient defines the interface for Gmail client operations used by mail commands.
@@ -55,20 +56,20 @@ func printMessageHeader(msg *gmail.Message, opts MessagePrintOptions) {
 		fmt.Printf("ThreadID: %s\n", msg.ThreadID)
 	}
 	// Sanitize user-provided content to prevent terminal injection attacks
-	fmt.Printf("From: %s\n", SanitizeOutput(msg.From))
+	fmt.Printf("From: %s\n", sanitize.Output(msg.From))
 	if opts.IncludeTo {
-		fmt.Printf("To: %s\n", SanitizeOutput(msg.To))
+		fmt.Printf("To: %s\n", sanitize.Output(msg.To))
 	}
-	fmt.Printf("Subject: %s\n", SanitizeOutput(msg.Subject))
+	fmt.Printf("Subject: %s\n", sanitize.Output(msg.Subject))
 	fmt.Printf("Date: %s\n", msg.Date)
 	if len(msg.Labels) > 0 {
-		fmt.Printf("Labels: %s\n", strings.Join(msg.Labels, ", "))
+		fmt.Printf("Labels: %s\n", sanitize.Output(strings.Join(msg.Labels, ", ")))
 	}
 	if len(msg.Categories) > 0 {
-		fmt.Printf("Categories: %s\n", strings.Join(msg.Categories, ", "))
+		fmt.Printf("Categories: %s\n", sanitize.Output(strings.Join(msg.Categories, ", ")))
 	}
 	if opts.IncludeSnippet {
-		fmt.Printf("Snippet: %s\n", SanitizeOutput(msg.Snippet))
+		fmt.Printf("Snippet: %s\n", sanitize.Output(msg.Snippet))
 	}
 	if opts.IncludeBody {
 		body := msg.Body
@@ -76,6 +77,6 @@ func printMessageHeader(msg *gmail.Message, opts MessagePrintOptions) {
 			body, _ = elideQuotedReplyBody(body, msg.BodyIsHTML)
 		}
 		fmt.Print("\n--- Body ---\n\n")
-		fmt.Println(SanitizeOutput(body))
+		fmt.Println(sanitize.Output(body))
 	}
 }

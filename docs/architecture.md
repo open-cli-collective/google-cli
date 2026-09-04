@@ -40,7 +40,7 @@ The dependency direction is deliberate:
 - Write commands in `internal/rwcmd/<domain>` compose the read command and add leaves; read packages never import write packages.
 - `cmd/gro` cannot reach `internal/rw` or `internal/rwcmd` through its link graph.
 
-Support packages such as `auth`, `bulk`, `config`, `keychain`, `output`, and `testutil` stay under `internal` and are available to both applications where appropriate.
+Support packages such as `auth`, `bulk`, `config`, `keychain`, `output`, `sanitize`, `testutil`, and `view` stay under `internal` and are available to both applications where appropriate.
 
 ## Domain shape
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/open-cli-collective/google-cli/internal/api/drive"
 	"github.com/open-cli-collective/google-cli/internal/format"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 func newGetCommand() *cobra.Command {
@@ -45,7 +46,7 @@ func printFileDetails(f *drive.File) {
 	fmt.Println("────────────────────────────────────────")
 
 	fmt.Printf("ID:         %s\n", f.ID)
-	fmt.Printf("Name:       %s\n", f.Name)
+	fmt.Printf("Name:       %s\n", sanitize.Filename(f.Name))
 	fmt.Printf("Type:       %s\n", drive.GetTypeName(f.MimeType))
 
 	if f.Size > 0 {
@@ -63,7 +64,7 @@ func printFileDetails(f *drive.File) {
 	}
 
 	if len(f.Owners) > 0 {
-		fmt.Printf("Owner:      %s\n", strings.Join(f.Owners, ", "))
+		fmt.Printf("Owner:      %s\n", sanitize.Output(strings.Join(f.Owners, ", ")))
 	}
 
 	if f.Shared {
@@ -73,10 +74,10 @@ func printFileDetails(f *drive.File) {
 	}
 
 	if f.WebViewLink != "" {
-		fmt.Printf("Web Link:   %s\n", f.WebViewLink)
+		fmt.Printf("Web Link:   %s\n", sanitize.Output(f.WebViewLink))
 	}
 
 	if len(f.Parents) > 0 {
-		fmt.Printf("Parent:     %s\n", strings.Join(f.Parents, ", "))
+		fmt.Printf("Parent:     %s\n", sanitize.Output(strings.Join(f.Parents, ", ")))
 	}
 }

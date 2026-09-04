@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-cli-collective/google-cli/internal/api/drive"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // TreeNode represents a node in the folder tree
@@ -173,7 +174,7 @@ func buildTreeWithScope(ctx context.Context, client DriveClient, folderID, rootN
 // printTree prints the tree structure with tree characters
 func printTree(node *TreeNode, prefix string, isRoot bool) {
 	if isRoot {
-		fmt.Println(node.Name)
+		fmt.Println(sanitize.Filename(node.Name))
 	}
 
 	for i, child := range node.Children {
@@ -181,9 +182,9 @@ func printTree(node *TreeNode, prefix string, isRoot bool) {
 
 		// Print the current line
 		if isLast {
-			fmt.Printf("%s└── %s\n", prefix, child.Name)
+			fmt.Printf("%s└── %s\n", prefix, sanitize.Filename(child.Name))
 		} else {
-			fmt.Printf("%s├── %s\n", prefix, child.Name)
+			fmt.Printf("%s├── %s\n", prefix, sanitize.Filename(child.Name))
 		}
 
 		// Print children with updated prefix
