@@ -28,13 +28,13 @@ var ClientFactory = func(ctx context.Context) (WriteClient, error) { return driv
 
 func newWriteClient(ctx context.Context) (WriteClient, error) { return ClientFactory(ctx) }
 
-// printFile prints a file's identity. Names come from Drive, where a
-// collaborator may have set them, so they are sanitized before reaching the
-// terminal.
+// printFile prints a file's identity. Every field comes from Drive, where a
+// collaborator may have set it, so all of them are sanitized before reaching
+// the terminal.
 func printFile(file *driveapi.File) {
-	fmt.Printf("ID: %s\n", file.ID)
+	fmt.Printf("ID: %s\n", sanitize.Output(file.ID))
 	fmt.Printf("Name: %s\n", sanitize.Filename(file.Name))
-	fmt.Printf("Type: %s\n", file.MimeType)
+	fmt.Printf("Type: %s\n", sanitize.Output(file.MimeType))
 	if len(file.Parents) > 0 {
 		fmt.Printf("Parent: %s\n", sanitize.Output(file.Parents[0]))
 	}

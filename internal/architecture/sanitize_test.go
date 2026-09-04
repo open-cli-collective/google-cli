@@ -1,8 +1,8 @@
 package architecture
 
 import (
-	"bytes"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
@@ -19,9 +19,8 @@ func TestPrintedDTOTextIsSanitized(t *testing.T) {
 	for _, kind := range []string{"cmd", "rwcmd"} {
 		for _, pkg := range packageDirs(t, kind) {
 			dir := filepath.Join(root, "internal", kind, pkg)
-			files, paths := parseNonTestFiles(t, dir), nonTestGoFiles(t, dir)
-			for i, file := range files {
-				ast.Inspect(file, func(node ast.Node) bool {
+			for _, source := range nonTestSources(t, dir) {
+				ast.Inspect(source.file, func(node ast.Node) bool {
 					call, ok := node.(*ast.CallExpr)
 					if !ok || !isOutputCall(call) {
 						return true
@@ -33,7 +32,7 @@ func TestPrintedDTOTextIsSanitized(t *testing.T) {
 								wrapped = true
 								return
 							}
-							t.Errorf("%s:%d: printed DTO field %s must be wrapped in sanitize.Output or sanitize.Filename", relativePath(root, paths[i]), sourceLine(t, paths[i], sel.Pos()), sel.Sel.Name)
+							t.Errorf("%s:%d: printed DTO text %s must be wrapped in sanitize.Output or sanitize.Filename", relativePath(root, source.path), source.fset.Position(sel.Pos()).Line, sel.Sel.Name)
 						})
 					}
 					if wrapped {
@@ -50,12 +49,22 @@ func TestPrintedDTOTextIsSanitized(t *testing.T) {
 	}
 }
 
+// dtoTextFields returns the names of DTO text sources: exported string and
+// []string struct fields in internal/api, plus the argument-less string
+// getters declared on those DTOs (GetDisplayName and friends), so text reached
+// through a method is held to the same rule as a field.
 func dtoTextFields(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	fields := map[string]bool{}
 	for _, pkg := range packageDirs(t, "api") {
 		for _, file := range parseNonTestFiles(t, filepath.Join(root, "internal", "api", pkg)) {
 			ast.Inspect(file, func(node ast.Node) bool {
+				if fn, ok := node.(*ast.FuncDecl); ok {
+					if fn.Recv != nil && fn.Name.IsExported() && isStringGetter(fn.Type) {
+						fields[fn.Name.Name] = true
+					}
+					return false
+				}
 				structType, ok := node.(*ast.StructType)
 				if !ok {
 					return true
@@ -85,6 +94,16 @@ func dtoTextFields(t *testing.T, root string) map[string]bool {
 		}
 	}
 	return fields
+}
+
+func isStringGetter(fn *ast.FuncType) bool {
+	if fn.Params != nil && len(fn.Params.List) > 0 {
+		return false
+	}
+	if fn.Results == nil || len(fn.Results.List) != 1 {
+		return false
+	}
+	return isIdent(fn.Results.List[0].Type, "string")
 }
 
 func isStringOrStringSlice(expr ast.Expr) bool {
@@ -140,33 +159,35 @@ func isIdent(expr ast.Expr, name string) bool {
 	return ok && ident.Name == name
 }
 
-func nonTestGoFiles(t *testing.T, dir string) []string {
+// parsedSource keeps a parsed file together with the path and file set needed
+// to report positions in it.
+type parsedSource struct {
+	path string
+	fset *token.FileSet
+	file *ast.File
+}
+
+func nonTestSources(t *testing.T, dir string) []parsedSource {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("read %s: %v", dir, err)
 	}
-	var paths []string
+	var sources []parsedSource
 	for _, entry := range entries {
 		name := entry.Name()
-		if strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") {
-			paths = append(paths, filepath.Join(dir, name))
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
 		}
+		path := filepath.Join(dir, name)
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		sources = append(sources, parsedSource{path: path, fset: fset, file: file})
 	}
-	return paths
-}
-
-func sourceLine(t *testing.T, path string, pos token.Pos) int {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	offset := int(pos) - 1
-	if offset < 0 || offset > len(data) {
-		return 0
-	}
-	return bytes.Count(data[:offset], []byte("\n")) + 1
+	return sources
 }
 
 func relativePath(root, path string) string {
