@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+// minDeclaringFiles is a sanity floor: the repo has well over ten files that
+// take bulk IDs, so a detector that matches fewer has stopped seeing them.
+const minDeclaringFiles = 10
+
 func TestBulkLeavesRouteThroughResolver(t *testing.T) {
 	t.Parallel()
 	declaringFiles := 0
@@ -28,8 +32,8 @@ func TestBulkLeavesRouteThroughResolver(t *testing.T) {
 			}
 		}
 	}
-	if declaringFiles < 10 {
-		t.Fatalf("found %d files declaring bulk ID sources; want at least 10", declaringFiles)
+	if declaringFiles < minDeclaringFiles {
+		t.Fatalf("found %d files declaring bulk ID sources; want at least %d", declaringFiles, minDeclaringFiles)
 	}
 }
 
@@ -66,7 +70,16 @@ func bulkSourceFlags(file *ast.File) map[string]bool {
 		}
 		name, nameOK := stringLiteral(call.Args[1])
 		help, helpOK := stringLiteral(call.Args[len(call.Args)-1])
-		if nameOK && helpOK && (name == "stdin" || name == "query") && (strings.Contains(help, "ID") || strings.Contains(help, "resource name")) {
+		if !nameOK || !helpOK {
+			return true
+		}
+		// A bulk ID source is a --stdin or --query flag whose help says it
+		// carries IDs or resource names. The same flag names also appear on
+		// mail draft (body from stdin) and mail filter (filter criteria),
+		// which are not ID sources.
+		isBulkFlagName := name == "stdin" || name == "query"
+		helpMentionsIDs := strings.Contains(help, "ID") || strings.Contains(help, "resource name")
+		if isBulkFlagName && helpMentionsIDs {
 			flags[name] = true
 		}
 		return true
@@ -74,6 +87,10 @@ func bulkSourceFlags(file *ast.File) map[string]bool {
 	return flags
 }
 
+// resolverFunctions returns the package's functions that reach
+// bulk.ResolveIDs. It iterates to a fixed point because a leaf may call a
+// helper (such as the drive package's resolveFileIDs) that calls another
+// helper before the resolver; a single pass would only see direct callers.
 func resolverFunctions(files []*ast.File) map[string]bool {
 	resolvers := map[string]bool{}
 	for changed := true; changed; {
