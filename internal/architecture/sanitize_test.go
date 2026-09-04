@@ -50,9 +50,10 @@ func TestPrintedDTOTextIsSanitized(t *testing.T) {
 }
 
 // dtoTextFields returns the names of DTO text sources: exported string and
-// []string struct fields in internal/api, plus the argument-less string
-// getters declared on those DTOs (GetDisplayName and friends), so text reached
-// through a method is held to the same rule as a field.
+// []string struct fields in internal/api, plus the argument-less Get* string
+// methods declared on those DTOs (GetDisplayName and friends), so text reached
+// through a getter is held to the same rule as a field. Formatting helpers
+// such as FormatTimeRange are not getters and render only dates.
 func dtoTextFields(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	fields := map[string]bool{}
@@ -60,7 +61,7 @@ func dtoTextFields(t *testing.T, root string) map[string]bool {
 		for _, file := range parseNonTestFiles(t, filepath.Join(root, "internal", "api", pkg)) {
 			ast.Inspect(file, func(node ast.Node) bool {
 				if fn, ok := node.(*ast.FuncDecl); ok {
-					if fn.Recv != nil && fn.Name.IsExported() && isStringGetter(fn.Type) {
+					if fn.Recv != nil && strings.HasPrefix(fn.Name.Name, "Get") && isStringGetter(fn.Type) {
 						fields[fn.Name.Name] = true
 					}
 					return false
