@@ -17,6 +17,7 @@ import (
 	xhtml "golang.org/x/net/html"
 
 	gmailapi "github.com/open-cli-collective/google-cli/internal/api/gmail"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 func newDraftCommand() *cobra.Command {
@@ -311,18 +312,18 @@ Examples:
 			}
 
 			fmt.Printf("Draft created: %s\n", result.ID)
-			fmt.Printf("To: %s\n", SanitizeOutput(strings.Join(toAddrs, ", ")))
+			fmt.Printf("To: %s\n", sanitize.Output(strings.Join(toAddrs, ", ")))
 			if len(ccAddrs) > 0 {
-				fmt.Printf("Cc: %s\n", SanitizeOutput(strings.Join(ccAddrs, ", ")))
+				fmt.Printf("Cc: %s\n", sanitize.Output(strings.Join(ccAddrs, ", ")))
 			}
 			if len(bccAddrs) > 0 {
-				fmt.Printf("Bcc: %s\n", SanitizeOutput(strings.Join(bccAddrs, ", ")))
+				fmt.Printf("Bcc: %s\n", sanitize.Output(strings.Join(bccAddrs, ", ")))
 			}
-			fmt.Printf("Subject: %s\n", SanitizeOutput(subject))
+			fmt.Printf("Subject: %s\n", sanitize.Output(subject))
 			if len(attachments) > 0 {
 				fmt.Printf("Attachments: %d\n", len(attachments))
 				for _, a := range attachments {
-					fmt.Printf("  - %s\n", SanitizeOutput(a.Filename))
+					fmt.Printf("  - %s\n", sanitize.Filename(a.Filename))
 				}
 			}
 			return nil
@@ -485,7 +486,7 @@ func replyAttribution(src *gmailapi.Message) string {
 	if t, err := mail.ParseDate(src.Date); err == nil {
 		when = t.Format("Mon, Jan 2, 2006 at 3:04 PM")
 	}
-	return fmt.Sprintf("On %s %s wrote:", when, src.From)
+	return fmt.Sprintf("On %s %s wrote:", when, sanitize.Output(src.From))
 }
 
 // quotePlain prefixes each line of body for a plain-text reply: a non-empty

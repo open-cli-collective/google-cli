@@ -27,6 +27,7 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/config"
 	"github.com/open-cli-collective/google-cli/internal/identitycache"
 	"github.com/open-cli-collective/google-cli/internal/keychain"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 	"github.com/open-cli-collective/google-cli/internal/view"
 )
 
@@ -426,8 +427,8 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 				d.View.Printf("Setting up profile: %s\n", ref)
 			}
 			if cachedEmail != "" {
-				d.View.Printf("Currently holds:    %s\n", cachedEmail)
-				target = fmt.Sprintf("%s (%s)", ref, cachedEmail)
+				d.View.Printf("Currently holds:    %s\n", sanitize.Output(cachedEmail))
+				target = fmt.Sprintf("%s (%s)", ref, sanitize.Output(cachedEmail))
 			}
 			if opts.profile == "" {
 				d.View.Printf("To add a different account instead, use '%s init --profile <name>'.\n", config.ProductName())
@@ -531,7 +532,7 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 		if err != nil {
 			return fmt.Errorf("verifying Gmail API: %w", err)
 		}
-		d.View.Success("Verified Gmail API for %s", email)
+		d.View.Success("Verified Gmail API for %s", sanitize.Output(email))
 		if d.RecordIdentity != nil {
 			d.RecordIdentity(email)
 		}
@@ -543,7 +544,7 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 			}
 			d.View.Println("")
 			_, _ = fmt.Fprintf(d.View.Out, "%s | %s | %s\n",
-				oneLinerField(profile.ResourceName), oneLinerField(profile.DisplayName), oneLinerField(profile.PrimaryEmail))
+				oneLinerField(profile.ResourceName), oneLinerField(sanitize.Output(profile.DisplayName)), oneLinerField(sanitize.Output(profile.PrimaryEmail)))
 		}
 	}
 
@@ -676,7 +677,7 @@ func tryExistingToken(ctx context.Context, d initDeps, opts *initOptions, target
 		}
 		return false, err
 	}
-	d.View.Success("Already authenticated as %s", email)
+	d.View.Success("Already authenticated as %s", sanitize.Output(email))
 	if d.RecordIdentity != nil {
 		d.RecordIdentity(email)
 	}
@@ -743,7 +744,7 @@ func finishExisting(d initDeps, profile *people.Profile) error {
 	if profile != nil {
 		d.View.Println("")
 		_, _ = fmt.Fprintf(d.View.Out, "%s | %s | %s\n",
-			oneLinerField(profile.ResourceName), oneLinerField(profile.DisplayName), oneLinerField(profile.PrimaryEmail))
+			oneLinerField(profile.ResourceName), oneLinerField(sanitize.Output(profile.DisplayName)), oneLinerField(sanitize.Output(profile.PrimaryEmail)))
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	contactsapi "github.com/open-cli-collective/google-cli/internal/api/contacts"
 	contactscmd "github.com/open-cli-collective/google-cli/internal/cmd/contacts"
 	contactsrw "github.com/open-cli-collective/google-cli/internal/rw/contacts"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // WriteClient is the Contacts surface used by grw commands.
@@ -32,10 +33,10 @@ func printContact(contact *contactsapi.Contact) {
 	}
 	if len(contact.Names) > 0 {
 		name := contact.Names[0]
-		fmt.Printf("Name: %s\n", strings.TrimSpace(strings.Join([]string{name.HonorificPrefix, name.GivenName, name.MiddleName, name.FamilyName, name.HonorificSuffix}, " ")))
+		fmt.Printf("Name: %s\n", sanitize.Output(strings.TrimSpace(strings.Join([]string{name.HonorificPrefix, name.GivenName, name.MiddleName, name.FamilyName, name.HonorificSuffix}, " "))))
 	}
 	for _, email := range contact.Emails {
-		fmt.Printf("Email: %s", email.Value)
+		fmt.Printf("Email: %s", sanitize.Output(email.Value))
 		if email.Type != "" {
 			fmt.Printf(" [%s]", email.Type)
 		}
@@ -45,33 +46,33 @@ func printContact(contact *contactsapi.Contact) {
 		fmt.Println()
 	}
 	for _, phone := range contact.Phones {
-		fmt.Printf("Phone: %s", phone.Value)
+		fmt.Printf("Phone: %s", sanitize.Output(phone.Value))
 		if phone.Type != "" {
 			fmt.Printf(" [%s]", phone.Type)
 		}
 		fmt.Println()
 	}
 	for _, organization := range contact.Organizations {
-		fmt.Printf("Organization: %s", organization.Name)
+		fmt.Printf("Organization: %s", sanitize.Output(organization.Name))
 		if organization.Title != "" {
-			fmt.Printf(" (%s)", organization.Title)
+			fmt.Printf(" (%s)", sanitize.Output(organization.Title))
 		}
 		if organization.Department != "" {
-			fmt.Printf(" - %s", organization.Department)
+			fmt.Printf(" - %s", sanitize.Output(organization.Department))
 		}
 		fmt.Println()
 	}
 	for _, address := range contact.Addresses {
-		fmt.Printf("Address: %s\n", address.FormattedValue)
+		fmt.Printf("Address: %s\n", sanitize.Output(address.FormattedValue))
 	}
 	for _, url := range contact.URLs {
-		fmt.Printf("URL: %s\n", url.Value)
+		fmt.Printf("URL: %s\n", sanitize.Output(url.Value))
 	}
 	if contact.Biography != "" {
-		fmt.Printf("Biography: %s\n", contact.Biography)
+		fmt.Printf("Biography: %s\n", sanitize.Output(contact.Biography))
 	}
 	if contact.Birthday != "" {
-		fmt.Printf("Birthday: %s\n", contact.Birthday)
+		fmt.Printf("Birthday: %s\n", sanitize.Output(contact.Birthday))
 	}
 }
 
@@ -79,5 +80,5 @@ func printGroup(group *contactsapi.ContactGroup) {
 	if group.ResourceName != "" {
 		fmt.Printf("ID: %s\n", group.ResourceName)
 	}
-	fmt.Printf("Name: %s\n", group.Name)
+	fmt.Printf("Name: %s\n", sanitize.Output(group.Name))
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	gmailapi "github.com/open-cli-collective/google-cli/internal/api/gmail"
-	mailcmd "github.com/open-cli-collective/google-cli/internal/cmd/mail"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 func newSendCommand() *cobra.Command {
@@ -50,10 +50,10 @@ elsewhere between the preview and the send, the edited version goes out.`,
 }
 
 func printDraftSummary(draft *gmailapi.DraftSummary) {
-	fmt.Printf("From: %s\n", mailcmd.SanitizeOutput(draft.From))
-	fmt.Printf("To: %s\n", mailcmd.SanitizeOutput(draft.To))
-	fmt.Printf("Cc: %s\n", mailcmd.SanitizeOutput(draft.Cc))
-	fmt.Printf("Bcc: %s\n", mailcmd.SanitizeOutput(draft.Bcc))
-	fmt.Printf("Subject: %s\n", mailcmd.SanitizeOutput(draft.Subject))
+	fmt.Printf("From: %s\n", sanitize.Output(draft.From))
+	fmt.Printf("To: %s\n", sanitize.Output(draft.To))
+	fmt.Printf("Cc: %s\n", sanitize.Output(draft.Cc))
+	fmt.Printf("Bcc: %s\n", sanitize.Output(draft.Bcc))
+	fmt.Printf("Subject: %s\n", sanitize.Output(draft.Subject))
 	fmt.Printf("Attachments: %d\n", draft.AttachmentCount)
 }

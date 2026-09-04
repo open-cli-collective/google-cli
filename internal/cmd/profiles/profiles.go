@@ -27,6 +27,7 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/identitycache"
 	"github.com/open-cli-collective/google-cli/internal/keychain"
 	"github.com/open-cli-collective/google-cli/internal/output"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // NewCommand returns the profiles command with subcommands.
@@ -174,7 +175,7 @@ func runList(ctx context.Context, jsonOut, check bool) error {
 		if email == "" {
 			email = "-"
 		}
-		line := fmt.Sprintf("%s\t%s\t%s\t%s", marker, r.Profile, presence(r.TokenPresent), email)
+		line := fmt.Sprintf("%s\t%s\t%s\t%s", marker, r.Profile, presence(r.TokenPresent), sanitize.Output(email))
 		if check {
 			line += "\t" + r.Health
 		}

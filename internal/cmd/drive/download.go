@@ -11,6 +11,7 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/api/drive"
 	"github.com/open-cli-collective/google-cli/internal/config"
 	formatpkg "github.com/open-cli-collective/google-cli/internal/format"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 func newDownloadCommand() *cobra.Command {
@@ -73,7 +74,7 @@ Export formats:
 				}
 
 				if !stdout {
-					fmt.Printf("Exporting: %s\n", file.Name)
+					fmt.Printf("Exporting: %s\n", sanitize.Filename(file.Name))
 					fmt.Printf("Format: %s\n", format)
 				}
 
@@ -85,11 +86,11 @@ Export formats:
 				// Regular file - download directly
 				if format != "" {
 					return fmt.Errorf("--format flag is only for Google Workspace files; %s is a %s",
-						file.Name, drive.GetTypeName(file.MimeType))
+						sanitize.Filename(file.Name), drive.GetTypeName(file.MimeType))
 				}
 
 				if !stdout {
-					fmt.Printf("Downloading: %s\n", file.Name)
+					fmt.Printf("Downloading: %s\n", sanitize.Filename(file.Name))
 				}
 
 				data, err = client.DownloadFile(ctx, fileID)
@@ -114,7 +115,7 @@ Export formats:
 			}
 
 			fmt.Printf("Size: %s\n", formatpkg.Size(int64(len(data))))
-			fmt.Printf("Saved to: %s\n", outputPath)
+			fmt.Printf("Saved to: %s\n", sanitize.Filename(outputPath))
 			return nil
 		},
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/open-cli-collective/google-cli/internal/api/drive"
 	"github.com/open-cli-collective/google-cli/internal/format"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 func newListCommand() *cobra.Command {
@@ -199,7 +200,7 @@ func printFileTable(files []*drive.File) {
 		typeName := drive.GetTypeName(f.MimeType)
 
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			f.ID, f.Name, typeName, size, modified)
+			f.ID, sanitize.Filename(f.Name), typeName, size, modified)
 	}
 
 	_ = w.Flush()

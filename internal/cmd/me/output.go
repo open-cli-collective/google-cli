@@ -9,6 +9,7 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/api/gmail"
 	"github.com/open-cli-collective/google-cli/internal/api/people"
 	"github.com/open-cli-collective/google-cli/internal/keychain"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // PeopleClient defines the interface for People client operations used by the me command.
@@ -81,6 +82,7 @@ func RenderID(w io.Writer, p *people.Profile) {
 }
 
 func normalizeField(s string) string {
+	s = sanitize.Output(s)
 	if s == "" {
 		return "-"
 	}

@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 	gmailv1 "google.golang.org/api/gmail/v1"
+
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 func newFilterCommand() *cobra.Command {
@@ -46,8 +48,8 @@ func newFilterListCommand() *cobra.Command {
 			}
 			for _, f := range filters {
 				fmt.Printf("%s\n", f.Id)
-				fmt.Printf("  when: %s\n", criteriaSummary(f.Criteria))
-				fmt.Printf("  then: %s\n", actionSummary(f.Action, names))
+				fmt.Printf("  when: %s\n", sanitize.Output(criteriaSummary(f.Criteria)))
+				fmt.Printf("  then: %s\n", sanitize.Output(actionSummary(f.Action, names)))
 			}
 			return nil
 		},

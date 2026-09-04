@@ -17,6 +17,7 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/config"
 	"github.com/open-cli-collective/google-cli/internal/keychain"
 	"github.com/open-cli-collective/google-cli/internal/output"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // configFilesForClear returns the config files `clear --all` should remove,
@@ -252,7 +253,7 @@ func runTest(cmd *cobra.Command, _ []string) error {
 	fmt.Println("  Gmail API:   OK")
 	fmt.Printf("  Messages:    %d total\n", profile.MessagesTotal)
 	fmt.Println()
-	fmt.Printf("Authenticated as: %s\n", profile.EmailAddress)
+	fmt.Printf("Authenticated as: %s\n", sanitize.Output(profile.EmailAddress))
 	return nil
 }
 

@@ -7,6 +7,7 @@ import (
 	calendarv3 "google.golang.org/api/calendar/v3"
 
 	"github.com/open-cli-collective/google-cli/internal/api/calendar"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // CalendarClient defines the interface for Calendar client operations used by calendar commands.
@@ -32,22 +33,22 @@ func newCalendarClient(ctx context.Context) (CalendarClient, error) {
 // printEvent prints a single event in text format
 func printEvent(event *calendar.Event, showDescription bool) {
 	fmt.Printf("ID: %s\n", event.ID)
-	fmt.Printf("Summary: %s\n", event.Summary)
+	fmt.Printf("Summary: %s\n", sanitize.Output(event.Summary))
 	fmt.Printf("When: %s\n", event.FormatTimeRange())
 
 	if event.Location != "" {
-		fmt.Printf("Location: %s\n", event.Location)
+		fmt.Printf("Location: %s\n", sanitize.Output(event.Location))
 	}
 
 	if event.HangoutLink != "" {
-		fmt.Printf("Meet: %s\n", event.HangoutLink)
+		fmt.Printf("Meet: %s\n", sanitize.Output(event.HangoutLink))
 	}
 
 	if event.Organizer != nil {
 		if event.Organizer.DisplayName != "" {
-			fmt.Printf("Organizer: %s <%s>\n", event.Organizer.DisplayName, event.Organizer.Email)
+			fmt.Printf("Organizer: %s <%s>\n", sanitize.Output(event.Organizer.DisplayName), sanitize.Output(event.Organizer.Email))
 		} else {
-			fmt.Printf("Organizer: %s\n", event.Organizer.Email)
+			fmt.Printf("Organizer: %s\n", sanitize.Output(event.Organizer.Email))
 		}
 	}
 
@@ -59,9 +60,9 @@ func printEvent(event *calendar.Event, showDescription bool) {
 				status = fmt.Sprintf(" (%s)", a.Status)
 			}
 			if a.DisplayName != "" {
-				fmt.Printf("  - %s <%s>%s\n", a.DisplayName, a.Email, status)
+				fmt.Printf("  - %s <%s>%s\n", sanitize.Output(a.DisplayName), sanitize.Output(a.Email), status)
 			} else {
-				fmt.Printf("  - %s%s\n", a.Email, status)
+				fmt.Printf("  - %s%s\n", sanitize.Output(a.Email), status)
 			}
 		}
 	}
@@ -69,22 +70,22 @@ func printEvent(event *calendar.Event, showDescription bool) {
 	if showDescription && event.Description != "" {
 		fmt.Println()
 		fmt.Println("--- Description ---")
-		fmt.Println(event.Description)
+		fmt.Println(sanitize.Output(event.Description))
 	}
 }
 
 // printEventSummary prints a brief event summary for list views
 func printEventSummary(event *calendar.Event) {
 	fmt.Printf("ID: %s\n", event.ID)
-	fmt.Printf("Summary: %s\n", event.Summary)
+	fmt.Printf("Summary: %s\n", sanitize.Output(event.Summary))
 	fmt.Printf("When: %s\n", event.FormatTimeRange())
 
 	if event.Location != "" {
-		fmt.Printf("Location: %s\n", event.Location)
+		fmt.Printf("Location: %s\n", sanitize.Output(event.Location))
 	}
 
 	if event.HangoutLink != "" {
-		fmt.Printf("Meet: %s\n", event.HangoutLink)
+		fmt.Printf("Meet: %s\n", sanitize.Output(event.HangoutLink))
 	}
 
 	fmt.Println("---")
@@ -97,11 +98,11 @@ func printCalendar(cal *calendar.CalendarInfo) {
 		primary = " (primary)"
 	}
 	fmt.Printf("ID: %s%s\n", cal.ID, primary)
-	fmt.Printf("Name: %s\n", cal.Summary)
+	fmt.Printf("Name: %s\n", sanitize.Output(cal.Summary))
 	if cal.Description != "" {
-		fmt.Printf("Description: %s\n", cal.Description)
+		fmt.Printf("Description: %s\n", sanitize.Output(cal.Description))
 	}
-	fmt.Printf("Access: %s\n", cal.AccessRole)
+	fmt.Printf("Access: %s\n", sanitize.Output(cal.AccessRole))
 	if cal.TimeZone != "" {
 		fmt.Printf("Timezone: %s\n", cal.TimeZone)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/api/gmail"
 	"github.com/open-cli-collective/google-cli/internal/config"
 	"github.com/open-cli-collective/google-cli/internal/format"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 	ziputil "github.com/open-cli-collective/google-cli/internal/zip"
 )
 
@@ -112,7 +113,7 @@ Examples:
 				usedNames[downloadName] = true
 
 				// Sanitize filename for display to prevent terminal injection
-				safeFilename := SanitizeFilename(downloadName)
+				safeFilename := sanitize.Filename(downloadName)
 
 				// Security: Validate output path to prevent path traversal attacks
 				outputPath, err := safeOutputPath(absOutputDir, downloadName)
@@ -132,7 +133,7 @@ Examples:
 					continue
 				}
 
-				fmt.Printf("Downloaded: %s (%s)\n", outputPath, format.Size(int64(len(data))))
+				fmt.Printf("Downloaded: %s (%s)\n", sanitize.Filename(outputPath), format.Size(int64(len(data))))
 
 				// Extract if zip and --extract flag
 				if extract && isZipFile(downloadName, att.MimeType) {
@@ -141,7 +142,7 @@ Examples:
 					if err := ziputil.Extract(outputPath, extractDir, ziputil.DefaultOptions()); err != nil {
 						fmt.Fprintf(os.Stderr, "Error extracting %s: %v\n", safeFilename, err)
 					} else {
-						fmt.Printf("Extracted to: %s\n", extractDir)
+						fmt.Printf("Extracted to: %s\n", sanitize.Filename(extractDir))
 					}
 				}
 			}

@@ -9,6 +9,7 @@ import (
 	gmailapi "google.golang.org/api/gmail/v1"
 
 	"github.com/open-cli-collective/google-cli/internal/format"
+	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
 // Label represents a Gmail label for output
@@ -70,7 +71,7 @@ Examples:
 			fmt.Println(strings.Repeat("-", 60))
 			for _, label := range labels {
 				fmt.Printf("%-30s %-10s %8d %8d\n",
-					format.Truncate(label.Name, 30),
+					format.Truncate(sanitize.Output(label.Name), 30),
 					label.Type,
 					label.MessagesTotal,
 					label.MessagesUnread)

@@ -65,3 +65,9 @@ Verified by `TestSystemErrorUnwrap`, `TestAttributedTokenSource_NamesRefOnAuthEr
 Use function-field mocks in `mock_test.go` plus a compile-time interface assertion. Use `testutil.WithFactory` for temporary factory replacement, `testutil.CaptureStdout` for command output, the assertion helpers in `internal/testutil`, and existing `Sample*` fixtures before creating local fixtures.
 
 Compile-time assertions enforce mock conformance. Package handler tests exercise `WithFactory` and `CaptureStdout`; assertion helpers have focused tests such as `TestEqual`, `TestErrorIs`, and `TestContains`.
+
+## 11. Google-sourced text is sanitized before it reaches the terminal
+
+Text controlled by Google users or collaborators passes through `sanitize.Output` before printing. File and attachment names use `sanitize.Filename`, while identifiers and machine-readable values remain unchanged.
+
+Enforced by `TestPrintedDTOTextIsSanitized`.
