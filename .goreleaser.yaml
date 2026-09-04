@@ -116,7 +116,7 @@ nfpms:
     maintainer: Open CLI Collective <https://github.com/open-cli-collective>
     description: Read-only command-line interface for Google services
     license: MIT
-    formats: [deb, rpm]
+    formats: [deb, rpm, archlinux]
     bindir: /usr/bin
     contents:
       - src: LICENSE
@@ -129,7 +129,7 @@ nfpms:
     maintainer: Open CLI Collective <https://github.com/open-cli-collective>
     description: Read-write command-line interface for Google services
     license: MIT
-    formats: [deb, rpm]
+    formats: [deb, rpm, archlinux]
     bindir: /usr/bin
     contents:
       - src: LICENSE
