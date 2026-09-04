@@ -33,7 +33,7 @@ For message/resource mutations, accept exactly one source:
 - `--stdin` for newline-delimited IDs.
 - `--query` resolved through the domain client.
 
-Read commands that feed pipelines expose `--ids`. Reuse `internal/bulk.ResolveIDs` and `bulk.Result` instead of implementing input arbitration or result text again.
+Read commands that feed pipelines expose `--ids`. Reuse `internal/bulk.ResolveIDs` and `bulk.Result` instead of implementing input arbitration or result text again; `TestBulkLeavesRouteThroughResolver` enforces resolver use.
 
 ## 5. Add scopes and compose `grw`
 
