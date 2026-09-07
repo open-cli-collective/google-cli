@@ -17,6 +17,8 @@ jobs:
   auto-release:
     uses: open-cli-collective/.github/.github/workflows/auto-release.yml@v1
     with:
+      # Packaging changes must ship even when no Go source changed.
+      release-paths: "**.go,go.mod,go.sum,version.txt,.goreleaser.yaml"
       dry-run: ${{ github.event_name == 'workflow_dispatch' && (inputs.dry-run == true || inputs.dry-run == 'true') }}
     secrets:
       tag-token: ${{ secrets.TAP_GITHUB_TOKEN }}
