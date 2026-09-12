@@ -63,7 +63,7 @@ The required checks on `main` are `build`, `tidy`, `test`, `lint`, `static-relea
 
 ## Releases
 
-There is one release stream for both binaries. `version.txt` contains the major/minor line (`1.2`), and automatic releases create `v1.2.N` tags. A squash merge to `main` whose final commit begins with `feat:` or `fix:` triggers the automatic release decision when it changes Go source, `go.mod`, `go.sum`, `version.txt`, or `.goreleaser.yaml`. Packaging-only changes therefore ship too; documentation, test, CI, and chore-only merges do not cut a release.
+There is one release stream for both binaries. `version.txt` contains the major/minor line (`1.2`), and automatic releases create `v1.2.N` tags. A squash merge to `main` whose final commit begins with `feat:` or `fix:` triggers the automatic release decision when it changes Go source, `go.mod`, `go.sum`, `version.txt`, or `.goreleaser.yaml`. GoReleaser configuration changes therefore ship too; documentation, test, CI, and chore-only merges do not cut a release.
 
 Each tag publishes both binaries and their platform archives through the shared release automation. Homebrew, Chocolatey, WinGet, and Linux package publication fan out from that release. Follow the [release](https://github.com/open-cli-collective/cli-common/blob/main/docs/release.md) and [distribution](https://github.com/open-cli-collective/cli-common/blob/main/docs/distribution.md) standards rather than duplicating workflow policy here.
 
