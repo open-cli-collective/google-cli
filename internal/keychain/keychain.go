@@ -38,6 +38,11 @@ var allowedKeys = []string{KeyOAuthToken}
 // wrapper of credstore.ErrNotFound). Name retained for existing callers.
 var ErrTokenNotFound = errors.New("no token found in secure storage")
 
+// ErrProfileNotFound indicates that a profile has no stored credential
+// bundle. It is used by profile management so a typo cannot silently create
+// an empty destination.
+var ErrProfileNotFound = errors.New("profile has no stored credentials")
+
 // Store is an open handle to gro's credential bundle. Construct with one of
 // the Open* functions, always Close. It carries the resolved ref so callers
 // can report it in `config show` / errors without re-deriving it (the ref is
@@ -327,6 +332,57 @@ func (s *Store) HasTokenFor(profile string) (bool, error) {
 		return false, fmt.Errorf("check %s at %s/%s: %w", KeyOAuthToken, s.service, profile, err)
 	}
 	return ok, nil
+}
+
+// CopyProfile copies every stored key in oldProfile to newProfile. The
+// destination must be empty; SetBundle validates all keys before writing and
+// rolls back a partial write where the backend supports it. The source is
+// untouched on every copy failure. credstore has no cross-process
+// compare-and-swap, so concurrent writers are outside this operation's
+// transaction boundary.
+func (s *Store) CopyProfile(oldProfile, newProfile string) error {
+	oldKeys, err := s.cs.ListBundle(oldProfile)
+	if err != nil {
+		return fmt.Errorf("list source profile %q: %w", oldProfile, err)
+	}
+	if len(oldKeys) == 0 {
+		return fmt.Errorf("%w: %s/%s", ErrProfileNotFound, s.service, oldProfile)
+	}
+	if oldProfile == newProfile {
+		return nil
+	}
+
+	newKeys, err := s.cs.ListBundle(newProfile)
+	if err != nil {
+		return fmt.Errorf("list destination profile %q: %w", newProfile, err)
+	}
+	if len(newKeys) > 0 {
+		return fmt.Errorf("destination profile %s/%s already exists", s.service, newProfile)
+	}
+
+	bundle := make(map[string]string, len(oldKeys))
+	for _, key := range oldKeys {
+		value, err := s.cs.Get(oldProfile, key)
+		if err != nil {
+			return fmt.Errorf("read %s/%s/%s: %w", s.service, oldProfile, key, err)
+		}
+		bundle[key] = value
+	}
+	if _, err := s.cs.SetBundle(newProfile, bundle); err != nil {
+		return fmt.Errorf("copy profile %s/%s to %s/%s: %w", s.service, oldProfile, s.service, newProfile, err)
+	}
+	return nil
+}
+
+// DeleteProfile removes every key stored under profile. It keeps the source
+// bundle semantics in one place so callers can report partial deletion
+// without ever claiming a complete rename. A concurrent writer can race this
+// operation because credstore exposes no cross-process lock or CAS.
+func (s *Store) DeleteProfile(profile string) error {
+	if _, err := s.cs.DeleteBundle(profile); err != nil {
+		return fmt.Errorf("delete profile %s/%s: %w", s.service, profile, err)
+	}
+	return nil
 }
 
 // EnsureMigrated runs (and resolves) the one-time §1.8 legacy migration up
