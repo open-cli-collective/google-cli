@@ -101,7 +101,8 @@ gro profiles rename old-name new-name
 
 Renaming moves the stored credentials without re-authentication, updates the
 saved active profile when necessary, and refuses a destination that already
-has credentials.
+has credentials. If saving the active-profile update fails, the copied
+destination is removed while the source remains so the command can be retried.
 
 ## Documentation
 

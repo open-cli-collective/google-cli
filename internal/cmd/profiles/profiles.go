@@ -389,7 +389,13 @@ func runRename(oldProfile, newProfile string) error {
 		cfg.CredentialRef = newRef
 		cfg.SetCredentialRefSource(config.RefSourceConfig)
 		if err := renameSaveConfig(cfg); err != nil {
-			return fmt.Errorf("saving active profile %s failed after copying credentials; source was retained: %w", oldRef, err)
+			// The source is still intact, so remove the copy before returning.
+			// That makes a transient config failure retryable while preserving
+			// the token if rollback itself cannot complete.
+			if rollbackErr := renameDelete(st, newProfile); rollbackErr != nil {
+				return fmt.Errorf("saving active profile %s failed after copying credentials; source was retained and copied destination may remain: %w (rollback failed: %v)", oldRef, err, rollbackErr)
+			}
+			return fmt.Errorf("saving active profile %s failed after copying credentials; source was retained and copied destination was removed: %w", oldRef, err)
 		}
 	}
 

@@ -492,7 +492,7 @@ func TestRunRename_CopyFailureRetainsSource(t *testing.T) {
 	assertNoToken(t, "new")
 }
 
-func TestRunRename_ConfigFailureRetainsBothBundles(t *testing.T) {
+func TestRunRename_ConfigFailureRollsBackCopy(t *testing.T) {
 	credtest.Setup(t)
 	seedToken(t, "old")
 	if err := config.SaveConfig(&config.Config{CredentialRef: "google-readonly/old"}); err != nil {
@@ -507,13 +507,75 @@ func TestRunRename_ConfigFailureRetainsBothBundles(t *testing.T) {
 		t.Fatalf("config failure = %v, want source-retained error", err)
 	}
 	assertToken(t, "old", "A-old")
-	assertToken(t, "new", "A-old")
+	assertNoToken(t, "new")
 	cfg, loadErr := config.LoadConfigForRuntime()
 	if loadErr != nil {
 		t.Fatal(loadErr)
 	}
 	if cfg.CredentialRef != "google-readonly/old" {
 		t.Fatalf("credential_ref after config failure = %q, want old", cfg.CredentialRef)
+	}
+}
+
+func TestRunRename_ConfigFailureRollbackFailureRetainsBothBundles(t *testing.T) {
+	credtest.Setup(t)
+	seedToken(t, "old")
+	if err := config.SaveConfig(&config.Config{CredentialRef: "google-readonly/old"}); err != nil {
+		t.Fatal(err)
+	}
+	originalSave := renameSaveConfig
+	renameSaveConfig = func(*config.Config) error { return errors.New("config unavailable") }
+	originalDelete := renameDelete
+	renameDelete = func(st *keychain.Store, profile string) error {
+		if profile == "new" {
+			return errors.New("rollback unavailable")
+		}
+		return originalDelete(st, profile)
+	}
+	t.Cleanup(func() {
+		renameSaveConfig = originalSave
+		renameDelete = originalDelete
+	})
+
+	err := runRenameQuiet(t, "old", "new")
+	if err == nil || !strings.Contains(err.Error(), "rollback failed") {
+		t.Fatalf("config and rollback failure = %v, want rollback detail", err)
+	}
+	assertToken(t, "old", "A-old")
+	assertToken(t, "new", "A-old")
+}
+
+func TestRunRename_RetryAfterTransientConfigFailure(t *testing.T) {
+	credtest.Setup(t)
+	seedToken(t, "old")
+	if err := config.SaveConfig(&config.Config{CredentialRef: "google-readonly/old"}); err != nil {
+		t.Fatal(err)
+	}
+	original := renameSaveConfig
+	attempts := 0
+	renameSaveConfig = func(cfg *config.Config) error {
+		attempts++
+		if attempts == 1 {
+			return errors.New("transient config failure")
+		}
+		return original(cfg)
+	}
+	t.Cleanup(func() { renameSaveConfig = original })
+
+	if err := runRenameQuiet(t, "old", "new"); err == nil {
+		t.Fatal("first rename should fail while saving config")
+	}
+	if err := runRenameQuiet(t, "old", "new"); err != nil {
+		t.Fatalf("retry rename: %v", err)
+	}
+	assertNoToken(t, "old")
+	assertToken(t, "new", "A-old")
+	cfg, err := config.LoadConfigForRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CredentialRef != "google-readonly/new" {
+		t.Fatalf("credential_ref after retry = %q, want google-readonly/new", cfg.CredentialRef)
 	}
 }
 
