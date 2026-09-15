@@ -60,6 +60,25 @@ func TestSetCredentialFromEnvSuccess(t *testing.T) {
 	}
 }
 
+func TestSetCredentialEmptySelectorFallsThroughToEnvironment(t *testing.T) {
+	credtest.Setup(t)
+	t.Setenv(keychain.CredentialRefEnvVar(), "google-readonly/env")
+	keychain.SetCredentialRefOverride("", true)
+	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
+
+	if err := run(&options{key: keychain.KeyOAuthToken, stdin: true, in: strings.NewReader(tokenJSON)}); err != nil {
+		t.Fatalf("set-credential with empty selector: %v", err)
+	}
+	st, err := keychain.OpenRef("google-readonly/env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	if tok, err := st.Token(); err != nil || tok.AccessToken != "SECRET-ACCESS" {
+		t.Fatalf("environment target token = %+v, err=%v", tok, err)
+	}
+}
+
 func TestSetCredentialRejectsNonToken(t *testing.T) {
 	credtest.Setup(t)
 	err := run(&options{key: keychain.KeyOAuthToken, stdin: true, in: strings.NewReader(`{"not":"a token"}`)})

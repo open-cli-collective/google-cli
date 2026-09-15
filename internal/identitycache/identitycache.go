@@ -80,3 +80,34 @@ func Put(profile, email string) error {
 	}
 	return clicache.WriteResource(loc, resourceName, ttl, m)
 }
+
+// Rename moves a cached identity to another profile while preserving its
+// verification time. Credentials are authoritative: an existing destination
+// identity is replaced, and a missing source removes any stale destination
+// identity. A cache miss with no destination is a successful no-op.
+func Rename(oldProfile, newProfile string) error {
+	if oldProfile == "" || newProfile == "" {
+		return fmt.Errorf("identitycache: old and new profiles are required")
+	}
+	if oldProfile == newProfile {
+		return nil
+	}
+
+	m := Load()
+	entry, ok := m[oldProfile]
+	if !ok {
+		if _, destination := m[newProfile]; !destination {
+			return nil
+		}
+		delete(m, newProfile)
+	} else {
+		m[newProfile] = entry
+	}
+	delete(m, oldProfile)
+
+	loc, err := locator()
+	if err != nil {
+		return err
+	}
+	return clicache.WriteResource(loc, resourceName, ttl, m)
+}

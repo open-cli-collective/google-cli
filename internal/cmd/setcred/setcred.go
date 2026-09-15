@@ -83,23 +83,31 @@ func run(opts *options) error {
 		return fmt.Errorf("token has neither an access nor a refresh token")
 	}
 
-	// §1.8: when targeting the default ref, run the one-time legacy migration
-	// first (shared keychain.EnsureMigrated, same guarantee as init).
+	// §1.8: when targeting the configured/default ref, run the one-time legacy
+	// migration first (shared keychain.EnsureMigrated, same guarantee as init).
 	// Otherwise a pre-existing legacy token.json + this fresh keyring write
 	// would collide on the next real command's Open() with a §1.8 conflict. A
 	// genuine conflict here aborts loudly (the user must resolve it, not
-	// silently overwrite via this scriptable path). An explicit --ref never
-	// migrates — the one-time migration only ever targets the canonical
-	// configured ref (see keychain.OpenRef).
+	// silently overwrite via this scriptable path). An explicit selector (local
+	// --ref or global --profile) never migrates — the one-time migration only
+	// ever targets the canonical configured ref (see keychain.OpenRef).
+	targetRef := opts.ref
+	if targetRef == "" {
+		if ref, set := keychain.GetCredentialRefOverride(); set && ref != "" {
+			targetRef = ref
+		} else if ref := os.Getenv(keychain.CredentialRefEnvVar()); ref != "" {
+			targetRef = ref
+		}
+	}
 	migrated := false
-	if opts.ref == "" {
+	if targetRef == "" {
 		if merr := keychain.EnsureMigrated(); merr != nil {
 			return merr
 		}
 		migrated = true
 	}
 
-	st, err := keychain.OpenRef(opts.ref) // ingress: runMigration=false
+	st, err := keychain.OpenRef(targetRef) // ingress: runMigration=false
 	if err != nil {
 		if migrated {
 			// The legacy original may already have been consumed by the

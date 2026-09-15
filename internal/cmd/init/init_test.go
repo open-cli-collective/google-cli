@@ -18,7 +18,6 @@ import (
 
 	"github.com/open-cli-collective/google-cli/internal/api/people"
 	"github.com/open-cli-collective/google-cli/internal/config"
-	"github.com/open-cli-collective/google-cli/internal/keychain"
 	"github.com/open-cli-collective/google-cli/internal/testutil"
 	"github.com/open-cli-collective/google-cli/internal/view"
 )
@@ -1043,39 +1042,6 @@ func TestRunWith_EnsureMigratedRunsFirst(t *testing.T) {
 
 // ---- target announcement, --profile, identity recording -------------------
 
-func TestApplyProfileFlag(t *testing.T) {
-	// Not Parallel: mutates the package-global credential-ref override.
-	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
-
-	t.Run("valid name routes the run at service/name", func(t *testing.T) {
-		keychain.SetCredentialRefOverride("", false)
-		ref, err := applyProfileFlag("work")
-		if err != nil {
-			t.Fatalf("applyProfileFlag: %v", err)
-		}
-		if ref != "google-readonly/work" {
-			t.Errorf("ref = %q, want google-readonly/work", ref)
-		}
-		if v, set := keychain.GetCredentialRefOverride(); !set || v != "google-readonly/work" {
-			t.Errorf("override = (%q,%v), want (google-readonly/work,true)", v, set)
-		}
-	})
-
-	t.Run("invalid characters rejected", func(t *testing.T) {
-		keychain.SetCredentialRefOverride("", false)
-		if _, err := applyProfileFlag("user@example.com"); err == nil {
-			t.Fatal("expected error for '@' in profile name")
-		}
-	})
-
-	t.Run("conflict with --ref rejected", func(t *testing.T) {
-		keychain.SetCredentialRefOverride("google-readonly/other", true)
-		if _, err := applyProfileFlag("work"); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-			t.Fatalf("expected mutual-exclusion error, got %v", err)
-		}
-	})
-}
-
 // TestRunWithAnnouncesTarget pins the up-front naming: which profile this
 // run touches, where it was selected, and which account it currently holds —
 // BEFORE any prompt or write.
@@ -1104,7 +1070,7 @@ func TestRunWithAnnouncesTarget(t *testing.T) {
 	for _, want := range []string{
 		"Setting up profile: google-readonly/default (via config.yml credential_ref)",
 		"Currently holds:    ada@example.com",
-		"init --profile <name>",
+		"--profile <name> init",
 		"Token for google-readonly/default saved to test",
 	} {
 		if !strings.Contains(got, want) {
@@ -1228,7 +1194,7 @@ func TestRunWithProfileFlagGuidance(t *testing.T) {
 		"Setting up profile: google-readonly/work (via --profile flag)",
 		"authenticated but not active",
 		"profiles use work",
-		"--ref google-readonly/work",
+		"--profile work <command>",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
