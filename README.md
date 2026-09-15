@@ -82,9 +82,17 @@ gro --ref google-readonly/work mail list
 
 The selector precedence is explicit flag (`--profile` or `--ref`), credential
 reference environment variable, saved `credential_ref`, then the built-in
-`default` profile. `--profile` and `--ref` cannot be used together. To add an
-account without changing the active profile, run `gro --profile work init` (or
-the equivalent `grw` command). Inspect and manage profiles with:
+`default` profile. For environment selection, use
+`GOOGLE_READONLY_CREDENTIAL_REF` with `gro` or
+`GOOGLE_READWRITE_CREDENTIAL_REF` with `grw`, for example:
+
+```bash
+GOOGLE_READONLY_CREDENTIAL_REF=google-readonly/work gro mail list
+```
+
+`--profile` and `--ref` cannot be used together. To add an account without
+changing the active profile, run `gro --profile work init` (or the equivalent
+`grw` command). Inspect and manage profiles with:
 
 ```bash
 gro profiles list

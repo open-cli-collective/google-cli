@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -396,6 +397,49 @@ func TestRunRename_MovesTokenCacheAndImplicitActiveProfile(t *testing.T) {
 	if got := cached["primary"].Email; got != "default@example.com" {
 		t.Fatalf("new cached identity = %q, want default@example.com", got)
 	}
+}
+
+func TestRunRename_NonActivePreservesSavedConfig(t *testing.T) {
+	credtest.Setup(t)
+	seedToken(t, "old")
+	clientPath := filepath.Join(t.TempDir(), "client.json")
+	original := &config.Config{
+		CredentialRef:   "google-readonly/current",
+		OAuthClientPath: clientPath,
+		GrantedScopes:   []string{"scope:mail", "scope:profile"},
+		Keyring:         config.KeyringConfig{Backend: "file"},
+	}
+	if err := config.SaveConfig(original); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runRenameQuiet(t, "old", "new"); err != nil {
+		t.Fatalf("runRename: %v", err)
+	}
+
+	got, err := config.LoadConfigForRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CredentialRef != original.CredentialRef {
+		t.Errorf("credential_ref after non-active rename = %q, want %q", got.CredentialRef, original.CredentialRef)
+	}
+	if got.OAuthClientPath != original.OAuthClientPath {
+		t.Errorf("oauth_client_path after non-active rename = %q, want %q", got.OAuthClientPath, original.OAuthClientPath)
+	}
+	if len(got.GrantedScopes) != len(original.GrantedScopes) {
+		t.Fatalf("granted_scopes after non-active rename = %v, want %v", got.GrantedScopes, original.GrantedScopes)
+	}
+	for i := range original.GrantedScopes {
+		if got.GrantedScopes[i] != original.GrantedScopes[i] {
+			t.Errorf("granted_scopes[%d] after non-active rename = %q, want %q", i, got.GrantedScopes[i], original.GrantedScopes[i])
+		}
+	}
+	if got.Keyring.Backend != original.Keyring.Backend {
+		t.Errorf("keyring backend after non-active rename = %q, want %q", got.Keyring.Backend, original.Keyring.Backend)
+	}
+	assertNoToken(t, "old")
+	assertToken(t, "new", "A-old")
 }
 
 func TestRunRename_CollisionRetainsSourceAndDestination(t *testing.T) {

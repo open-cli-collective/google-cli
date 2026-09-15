@@ -1175,6 +1175,14 @@ func TestRunWithProfileFlagGuidance(t *testing.T) {
 	d := baseDeps(t, fs)
 	out := &bytes.Buffer{}
 	d.View = view.NewWithWriters(out, out)
+	clientPath := filepath.Join(t.TempDir(), "client.json")
+	saved := &config.Config{
+		CredentialRef:   "google-readonly/default",
+		OAuthClientPath: clientPath,
+		Keyring:         config.KeyringConfig{Backend: "file"},
+	}
+	d.LoadConfig = func() (*config.Config, error) { return saved, nil }
+	d.SaveConfig = func(c *config.Config) error { *saved = *c; return nil }
 	d.DescribeTarget = func() (string, string, string) {
 		return "google-readonly/work", "--ref flag", ""
 	}
@@ -1199,5 +1207,14 @@ func TestRunWithProfileFlagGuidance(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}
+	}
+	if saved.CredentialRef != "google-readonly/default" {
+		t.Errorf("saved credential_ref after named init = %q, want google-readonly/default", saved.CredentialRef)
+	}
+	if saved.OAuthClientPath != clientPath {
+		t.Errorf("saved oauth_client_path after named init = %q, want unchanged path", saved.OAuthClientPath)
+	}
+	if saved.Keyring.Backend != "file" {
+		t.Errorf("saved keyring backend after named init = %q, want file", saved.Keyring.Backend)
 	}
 }
