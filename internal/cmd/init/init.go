@@ -66,9 +66,9 @@ The wizard first asks how you're getting your credentials.json:
     enabling the required Google APIs (shown for your CLI during setup), and
     downloading OAuth 2.0 Desktop-app credentials.
 
-If you're a Google Workspace admin and want to set up one Internal OAuth app
-for your whole org, see:
-  ` + workspaceAdminsURL + `
+For guidance on personal External apps, Workspace Internal apps, and
+profile-specific OAuth clients, see:
+  ` + oauthSetupURL + `
 
 You can also copy your credentials.json to the clipboard and run init — it will
 read, validate, and write it to the config directory for you.
@@ -108,11 +108,13 @@ type initDeps struct {
 	DiscoverSiblingClientJSON func() (path, sibling string, ok bool)
 
 	// FS abstraction so tests can use a temp dir without env shenanigans.
-	GetCredentialsPath func() (string, error)
-	ReadFile           func(path string) ([]byte, error)
-	WriteFile          func(path string, data []byte, perm os.FileMode) error
-	Chmod              func(path string, perm os.FileMode) error
-	Stat               func(path string) (os.FileInfo, error)
+	GetCredentialsPath        func(ref string) (string, error)
+	NewProfileOAuthClientPath func() (string, error)
+	ReadFile                  func(path string) ([]byte, error)
+	WriteFile                 func(path string, data []byte, perm os.FileMode) error
+	Chmod                     func(path string, perm os.FileMode) error
+	RemoveFile                func(path string) error
+	Stat                      func(path string) (os.FileInfo, error)
 
 	// Clipboard. Supported is checked first; ReadAll only called if Supported.
 	ClipboardSupported func() bool
@@ -156,7 +158,7 @@ type initDeps struct {
 
 	// OAuth.
 	ExchangeAuthCode func(ctx context.Context, cfg *oauth2.Config, code string) (*oauth2.Token, error)
-	GetOAuthConfig   func() (*oauth2.Config, error)
+	GetOAuthConfig   func(ref string) (*oauth2.Config, error)
 
 	// API verifiers (one Gmail, one People). Both used during init.
 	GmailVerify func(ctx context.Context) (string, error) // returns email
@@ -191,34 +193,40 @@ func defaultDeps() initDeps {
 	return initDeps{
 		View:                      view.New(),
 		DiscoverSiblingClientJSON: config.SiblingOAuthClientPath,
-		// The OAuth client JSON is deployment material (§1.2): the wizard
-		// writes it to oauth_client_path, not the legacy credentials.json.
-		GetCredentialsPath: func() (string, error) {
+		// The OAuth client JSON is deployment material (§1.2): older installs
+		// use the shared path, while explicitly imported profile clients resolve
+		// to their own managed JSON file.
+		GetCredentialsPath: func(ref string) (string, error) {
 			cfg, err := config.LoadConfigForRuntime()
 			if err != nil {
 				return "", err
 			}
-			return config.ExpandPath(cfg.OAuthClientPath), nil
+			if ref == "" {
+				ref = cfg.CredentialRef
+			}
+			return cfg.OAuthClientPathForRef(ref), nil
 		},
-		ReadFile:               os.ReadFile,
-		WriteFile:              os.WriteFile,
-		Chmod:                  os.Chmod,
-		Stat:                   os.Stat,
-		ClipboardSupported:     func() bool { return !clipboard.Unsupported },
-		ClipboardReadAll:       clipboard.ReadAll,
-		OpenBrowser:            browser.OpenURL,
-		DetectConfigRelocation: config.DetectConfigRelocation,
-		ApplyConfigRelocation:  config.ApplyConfigRelocation,
-		EnsureMigrated:         ensureMigrated,
-		DescribeTarget:         describeTarget,
-		RecordIdentity:         recordIdentity,
-		HasStoredToken:         storeHasToken,
-		SetToken:               storeSetToken,
-		DeleteToken:            storeDeleteToken,
-		GetStorageBackend:      storeBackendLabel,
-		StdinReadAll:           readAllStdin,
-		ExchangeAuthCode:       auth.ExchangeAuthCode,
-		GetOAuthConfig:         auth.GetOAuthConfig,
+		NewProfileOAuthClientPath: config.NewProfileOAuthClientPath,
+		ReadFile:                  os.ReadFile,
+		WriteFile:                 os.WriteFile,
+		Chmod:                     os.Chmod,
+		RemoveFile:                os.Remove,
+		Stat:                      os.Stat,
+		ClipboardSupported:        func() bool { return !clipboard.Unsupported },
+		ClipboardReadAll:          clipboard.ReadAll,
+		OpenBrowser:               browser.OpenURL,
+		DetectConfigRelocation:    config.DetectConfigRelocation,
+		ApplyConfigRelocation:     config.ApplyConfigRelocation,
+		EnsureMigrated:            ensureMigrated,
+		DescribeTarget:            describeTarget,
+		RecordIdentity:            recordIdentity,
+		HasStoredToken:            storeHasToken,
+		SetToken:                  storeSetToken,
+		DeleteToken:               storeDeleteToken,
+		GetStorageBackend:         storeBackendLabel,
+		StdinReadAll:              readAllStdin,
+		ExchangeAuthCode:          auth.ExchangeAuthCode,
+		GetOAuthConfig:            auth.GetOAuthConfigForRef,
 		GmailVerify: func(ctx context.Context) (string, error) {
 			c, err := gmail.NewClient(ctx)
 			if err != nil {
@@ -425,18 +433,18 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 		target = "the active profile"
 	}
 
-	credPath, err := d.GetCredentialsPath()
+	credPath, err := d.GetCredentialsPath(targetRef)
 	if err != nil {
 		return fmt.Errorf("getting credentials path: %w", err)
 	}
 
 	// Step 1: ensure credentials.json exists.
-	if err := ensureCredentials(d, opts, credPath); err != nil {
+	if err := ensureCredentials(d, opts, credPath, targetRef); err != nil {
 		return err
 	}
 
 	// Step 3: token resolution.
-	handled, err := tryExistingToken(ctx, d, opts, target)
+	handled, err := tryExistingToken(ctx, d, opts, target, targetRef)
 	if err != nil {
 		return err
 	}
@@ -445,7 +453,7 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 	}
 
 	// Step 4: OAuth flow.
-	oauthCfg, err := d.GetOAuthConfig()
+	oauthCfg, err := d.GetOAuthConfig(targetRef)
 	if err != nil {
 		return fmt.Errorf("loading OAuth config: %w", err)
 	}
@@ -497,14 +505,23 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 		d.View.Success("Token saved to %s", d.GetStorageBackend())
 	}
 
-	// Step 5: persist granted scopes (creates config.json if missing).
+	// Step 5: persist granted scopes. If config cannot be read after token
+	// exchange, do not replace it with an empty config: that could discard
+	// other profile-specific OAuth-client bindings.
 	cfg, cfgErr := d.LoadConfig()
 	if cfgErr != nil {
-		cfg = &config.Config{}
-	}
-	cfg.GrantedScopes = config.Scopes()
-	if saveErr := d.SaveConfig(cfg); saveErr != nil {
-		d.View.Error("Warning: saving granted scopes: %v", saveErr)
+		d.View.Error("Warning: token was saved, but granted scopes could not be recorded because config could not be loaded: %v", cfgErr)
+	} else {
+		if targetRef != "" {
+			profile := cfg.ProfileOAuth[targetRef]
+			profile.GrantedScopes = config.Scopes()
+			cfg.SetProfileOAuth(targetRef, profile)
+		} else {
+			cfg.GrantedScopes = config.Scopes()
+		}
+		if saveErr := d.SaveConfig(cfg); saveErr != nil {
+			d.View.Error("Warning: saving granted scopes: %v", saveErr)
+		}
 	}
 
 	// Step 7: verify the token works. Gmail is verified for every CLI built on
@@ -625,7 +642,7 @@ func apisForScopes(scopes []string) []string {
 // but People-insufficient token (typical of users who upgraded gro) must
 // trigger re-auth here, otherwise `gro me`'s "run gro init" message
 // produces an infinite remediation loop.
-func tryExistingToken(ctx context.Context, d initDeps, opts *initOptions, target string) (bool, error) {
+func tryExistingToken(ctx context.Context, d initDeps, opts *initOptions, target, targetRef string) (bool, error) {
 	if !d.HasStoredToken() {
 		return false, nil
 	}
@@ -634,7 +651,7 @@ func tryExistingToken(ctx context.Context, d initDeps, opts *initOptions, target
 	// regardless of --no-verify because letting --no-verify skip it would
 	// re-open the same remediation loop #107 is trying to close.
 	if cfg, err := d.LoadConfig(); err == nil {
-		if msg := auth.CheckScopesMigration(cfg.GrantedScopes); msg != "" {
+		if msg := auth.CheckScopesMigration(cfg.GrantedScopesForRef(targetRef)); msg != "" {
 			d.View.Error("Recorded scopes are stale.")
 			d.View.Println(msg)
 			if err := promptAndDeleteForReauth(d, opts, target); err != nil {
@@ -736,14 +753,14 @@ func finishExisting(d initDeps, profile *people.Profile) error {
 
 // ensureCredentials makes sure credentials.json exists at credPath, populating
 // it from --credentials-file or the interactive wizard if needed.
-func ensureCredentials(d initDeps, opts *initOptions, credPath string) error {
+func ensureCredentials(d initDeps, opts *initOptions, credPath, targetRef string) error {
 	// --credentials-file flag wins.
 	if opts.credentialsFile != "" {
 		expanded, err := expandTilde(opts.credentialsFile)
 		if err != nil {
 			return err
 		}
-		return importFromFile(d, expanded, credPath)
+		return importProfileFromFile(d, expanded, targetRef)
 	}
 
 	if _, err := d.Stat(credPath); err == nil {
@@ -780,10 +797,14 @@ func ensureCredentials(d initDeps, opts *initOptions, credPath string) error {
 		d.View.Println("  3. Create OAuth 2.0 Desktop-app credentials.")
 		d.View.Println("  4. Copy the JSON to your clipboard, OR download the JSON file.")
 		d.View.Println("")
-		d.View.Println("Optional: publish your OAuth app to avoid 7-day token expiry.")
+		d.View.Println("Personal account: enter the app name, user support email, and developer contact email in Branding. Choose External under Audience.")
+		d.View.Println("Add your Google account under Test users.")
+		d.View.Println("Testing is simplest to start, but this CLI's refresh tokens expire after 7 days in Testing.")
+		d.View.Println("Production removes this Testing-specific limit, but unverified warnings and a 100-user cap may still apply.")
+		d.View.Println("Personal-only apps or apps for a few personally known people may qualify for a verification exemption. If Publish app is disabled, complete the Branding fields Google requests.")
 		d.View.Println("")
-		d.View.Println("Workspace admin? Set up an Internal OAuth app once for your whole org:")
-		d.View.Println("  " + workspaceAdminsURL)
+		d.View.Println("For personal and Workspace setup details, see:")
+		d.View.Println("  " + oauthSetupURL)
 	default:
 		return fmt.Errorf("unknown audience: %s", audience)
 	}
@@ -840,6 +861,92 @@ func ensureCredentials(d initDeps, opts *initOptions, credPath string) error {
 		return nil
 	}
 	return errors.New("could not obtain valid credentials.json after 3 attempts")
+}
+
+// importProfileFromFile stores an explicit OAuth client import at a unique
+// managed path, then associates only the selected credential ref with it.
+// The legacy shared file is never overwritten by --credentials-file.
+func importProfileFromFile(d initDeps, srcPath, targetRef string) error {
+	blob, err := d.ReadFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", srcPath, err)
+	}
+	imported, err := google.ConfigFromJSON(blob, config.Scopes()...)
+	if err != nil {
+		return fmt.Errorf("invalid OAuth client JSON: %w", err)
+	}
+
+	cfg, err := d.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("loading profile config: %w", err)
+	}
+	ref := targetRef
+	if ref == "" {
+		ref = cfg.CredentialRef
+	}
+	if ref == "" {
+		ref = config.DefaultCredentialRef
+	}
+	if ref == "" {
+		return errors.New("could not resolve the target credential profile")
+	}
+
+	hasToken := d.HasStoredToken != nil && d.HasStoredToken()
+	var grantedScopes []string
+	if hasToken {
+		if d.GetOAuthConfig == nil {
+			return storedTokenClientChangeError(ref, "the current OAuth client could not be verified", nil)
+		}
+		current, cfgErr := d.GetOAuthConfig(ref)
+		if cfgErr != nil {
+			return storedTokenClientChangeError(ref, "the current OAuth client could not be verified", cfgErr)
+		}
+		if current == nil || current.ClientID == "" || current.ClientID != imported.ClientID {
+			return storedTokenClientChangeError(ref, "the imported OAuth client has a different client ID", nil)
+		}
+		grantedScopes = cfg.GrantedScopesForRef(ref)
+	}
+
+	getPath := d.NewProfileOAuthClientPath
+	if getPath == nil {
+		getPath = config.NewProfileOAuthClientPath
+	}
+	managedPath, err := getPath()
+	if err != nil {
+		return fmt.Errorf("creating profile OAuth client path: %w", err)
+	}
+	if err := writeCredentials(d, managedPath, blob); err != nil {
+		_ = removeProfileOAuthClientFile(d, managedPath)
+		return err
+	}
+	cfg.SetProfileOAuth(ref, config.ProfileOAuthConfig{
+		OAuthClientPath: managedPath,
+		GrantedScopes:   grantedScopes,
+	})
+	if err := d.SaveConfig(cfg); err != nil {
+		if removeErr := removeProfileOAuthClientFile(d, managedPath); removeErr != nil {
+			return fmt.Errorf("saving OAuth client association for %s: %w (could not remove staged client file: %w)", ref, err, removeErr)
+		}
+		return fmt.Errorf("saving OAuth client association for %s: %w", ref, err)
+	}
+	d.View.Success("OAuth client JSON saved for %s", ref)
+	return nil
+}
+
+func storedTokenClientChangeError(ref, reason string, cause error) error {
+	msg := fmt.Sprintf("profile %s already has a stored token; refusing to bind another OAuth client because %s. Run '%s config clear' with the same --profile/credential-ref selection to remove only this profile's token, then retry, or use a new profile",
+		ref, reason, config.ProductName())
+	if cause != nil {
+		return fmt.Errorf("%s: %w", msg, cause)
+	}
+	return errors.New(msg)
+}
+
+func removeProfileOAuthClientFile(d initDeps, path string) error {
+	if d.RemoveFile != nil {
+		return d.RemoveFile(path)
+	}
+	return os.Remove(path)
 }
 
 // importFromFile reads, validates, and writes credentials.json from a path.
@@ -900,10 +1007,10 @@ func extractAuthCode(input string) string {
 	return input
 }
 
-// workspaceAdminsURL points to the repo's Workspace-admin walkthrough.
+// oauthSetupURL points to the personal and Workspace OAuth setup guide.
 // Referenced from both cmd.Long and the runtime wizard, so installed-CLI
 // users (Homebrew/Chocolatey/Winget) reach it without a local checkout.
-const workspaceAdminsURL = "https://github.com/open-cli-collective/google-readonly/blob/main/WORKSPACE_ADMINS.md"
+const oauthSetupURL = "https://github.com/open-cli-collective/google-cli/blob/main/WORKSPACE_ADMINS.md"
 
 // huhPrompter is the production prompter — wraps huh.
 type huhPrompter struct{}

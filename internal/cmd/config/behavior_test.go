@@ -107,6 +107,65 @@ func TestRunShowReportsState(t *testing.T) {
 	}
 }
 
+func TestRunShowUsesSelectedProfileClient(t *testing.T) {
+	credtest.Setup(t)
+	keychain.SetCredentialRefOverride("", false)
+	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
+	t.Setenv(keychain.CredentialRefEnvVar(), "")
+	const ref = "google-readonly/personal"
+	dir := credtest.ConfigDir(t)
+	defaultPath := filepath.Join(dir, "shared-client.json")
+	profilePath := filepath.Join(dir, "personal-client.json")
+	profileJSON := strings.ReplaceAll(clientJSON, "123.apps.googleusercontent.com", "456.apps.googleusercontent.com")
+	if err := os.WriteFile(defaultPath, []byte(clientJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(profilePath, []byte(profileJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := appconfig.SaveConfig(&appconfig.Config{
+		CredentialRef:   appconfig.DefaultCredentialRef,
+		OAuthClientPath: defaultPath,
+		ProfileOAuth: map[string]appconfig.ProfileOAuthConfig{
+			ref: {OAuthClientPath: profilePath},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := keychain.OpenRef(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetToken(&oauth2.Token{AccessToken: "profile-token", RefreshToken: "profile-refresh"}); err != nil {
+		_ = st.Close()
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	keychain.SetCredentialRefOverride(ref, true)
+
+	jsonOut := capture(t, func() {
+		if err := runShow(true, false); err != nil {
+			t.Errorf("runShow: %v", err)
+		}
+	})
+	var status showStatus
+	if err := json.Unmarshal([]byte(jsonOut), &status); err != nil {
+		t.Fatalf("show --json: %v\n%s", err, jsonOut)
+	}
+	if status.CredentialRef != ref {
+		t.Fatalf("credential_ref = %q, want %q", status.CredentialRef, ref)
+	}
+	if status.OAuthClientPath != appconfig.ShortenPath(profilePath) {
+		t.Fatalf("OAuthClientPath = %q, want selected profile path %q", status.OAuthClientPath, appconfig.ShortenPath(profilePath))
+	}
+	wantFingerprint := "sha256:" + fileFingerprint([]byte(profileJSON))
+	if status.OAuthClientFingerprint != wantFingerprint {
+		t.Fatalf("profile OAuth fingerprint = %q, want %q", status.OAuthClientFingerprint, wantFingerprint)
+	}
+}
+
 // TestRunShowReportsKeyringBackendSelector seeds a non-empty
 // cfg.Keyring.Backend and asserts both the text output and the JSON
 // status carry the selector value — proving the new `keyring.backend:

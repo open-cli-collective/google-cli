@@ -3,6 +3,8 @@ package initcmd
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/open-cli-collective/google-cli/internal/config"
 )
 
 // TestEnsureCredentials_ReusesSiblingOAuthClient proves the seamless-setup
@@ -20,7 +22,7 @@ func TestEnsureCredentials_ReusesSiblingOAuthClient(t *testing.T) {
 	d.Prompter = prompter
 	d.DiscoverSiblingClientJSON = func() (string, string, bool) { return siblingPath, "google-readonly", true }
 
-	if err := ensureCredentials(d, &initOptions{}, credPath); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, credPath, config.DefaultCredentialRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
 	if _, ok := fs.files[credPath]; !ok {
@@ -42,7 +44,7 @@ func TestEnsureCredentials_NoSiblingFallsThroughToWizard(t *testing.T) {
 	d.Prompter = prompter
 	d.DiscoverSiblingClientJSON = func() (string, string, bool) { return "", "", false }
 
-	if err := ensureCredentials(d, &initOptions{}, credPath); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, credPath, config.DefaultCredentialRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
 	if len(prompter.calls) == 0 {

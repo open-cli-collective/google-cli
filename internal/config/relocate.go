@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -212,7 +213,34 @@ func configsMaterialEqual(a, b Config, oldDir, newDir string) bool {
 	if !oauthClientPathEquiv(a.OAuthClientPath, b.OAuthClientPath, oldDir, newDir) {
 		return false
 	}
+	if len(a.ProfileOAuth) != len(b.ProfileOAuth) {
+		return false
+	}
+	for ref, aProfile := range a.ProfileOAuth {
+		bProfile, ok := b.ProfileOAuth[ref]
+		if !ok || !slicesEqualSorted(aProfile.GrantedScopes, bProfile.GrantedScopes) {
+			return false
+		}
+		if !profileOAuthClientPathEquiv(aProfile.OAuthClientPath, bProfile.OAuthClientPath, oldDir, newDir) {
+			return false
+		}
+	}
 	return true
+}
+
+// profileOAuthClientPathEquiv also recognizes managed per-profile imports
+// copied with their config directory during relocation. User-selected paths
+// outside those directories still require an exact match.
+func profileOAuthClientPathEquiv(aPath, bPath, aDir, bDir string) bool {
+	if oauthClientPathEquiv(aPath, bPath, aDir, bDir) {
+		return true
+	}
+	aPath = ExpandPath(aPath)
+	bPath = ExpandPath(bPath)
+	base := filepath.Base(aPath)
+	return strings.HasPrefix(base, "oauth-client-profile-") &&
+		base == filepath.Base(bPath) &&
+		filepath.Dir(aPath) == aDir && filepath.Dir(bPath) == bDir
 }
 
 // oauthClientPathEquiv treats "both empty", "both equal to their own dir's

@@ -21,6 +21,47 @@ func reloctest(t *testing.T) (oldDir, newDir string) {
 	return oldDir, newDir
 }
 
+func TestConfigsMaterialEqual_ProfileOAuthAssociations(t *testing.T) {
+	oldDir, newDir := reloctest(t)
+	name := "oauth-client-profile-a1b2.json"
+	oldCfg := Config{
+		CredentialRef: "google-readonly/default",
+		ProfileOAuth: map[string]ProfileOAuthConfig{
+			"google-readonly/personal": {
+				OAuthClientPath: filepath.Join(oldDir, name),
+				GrantedScopes:   []string{"scope:a", "scope:b"},
+			},
+		},
+	}
+	newCfg := Config{
+		CredentialRef: "google-readonly/default",
+		ProfileOAuth: map[string]ProfileOAuthConfig{
+			"google-readonly/personal": {
+				OAuthClientPath: filepath.Join(newDir, name),
+				GrantedScopes:   []string{"scope:b", "scope:a"},
+			},
+		},
+	}
+	if !configsMaterialEqual(oldCfg, newCfg, oldDir, newDir) {
+		t.Fatal("matching profile associations under relocated dirs should be equivalent")
+	}
+
+	newCfg.ProfileOAuth["google-readonly/personal"] = ProfileOAuthConfig{
+		OAuthClientPath: filepath.Join(newDir, name),
+		GrantedScopes:   []string{"scope:a"},
+	}
+	if configsMaterialEqual(oldCfg, newCfg, oldDir, newDir) {
+		t.Fatal("different profile grants must be a relocation conflict")
+	}
+	newCfg.ProfileOAuth["google-readonly/personal"] = ProfileOAuthConfig{
+		OAuthClientPath: filepath.Join(newDir, "oauth-client-profile-other.json"),
+		GrantedScopes:   []string{"scope:a", "scope:b"},
+	}
+	if configsMaterialEqual(oldCfg, newCfg, oldDir, newDir) {
+		t.Fatal("different profile client paths must be a relocation conflict")
+	}
+}
+
 // detectAt exercises the pure-function core that takes an injected newDir,
 // so the four cases are testable on Linux even though Linux's real
 // os.UserConfigDir collapses to old==new.

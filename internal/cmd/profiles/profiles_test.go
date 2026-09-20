@@ -442,6 +442,76 @@ func TestRunRename_NonActivePreservesSavedConfig(t *testing.T) {
 	assertToken(t, "new", "A-old")
 }
 
+func TestRunRename_MovesProfileOAuthAssociationWithoutChangingActiveRef(t *testing.T) {
+	credtest.Setup(t)
+	seedToken(t, "old")
+	clientPath := filepath.Join(t.TempDir(), "oauth-client-profile-test.json")
+	originalScopes := []string{"scope:mail", "scope:profile"}
+	if err := config.SaveConfig(&config.Config{
+		CredentialRef: "google-readonly/current",
+		ProfileOAuth: map[string]config.ProfileOAuthConfig{
+			"google-readonly/old": {OAuthClientPath: clientPath, GrantedScopes: originalScopes},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runRenameQuiet(t, "old", "new"); err != nil {
+		t.Fatalf("runRename: %v", err)
+	}
+	got, err := config.LoadConfigForRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CredentialRef != "google-readonly/current" {
+		t.Fatalf("active credential_ref = %q, want unchanged current profile", got.CredentialRef)
+	}
+	if _, exists := got.ProfileOAuth["google-readonly/old"]; exists {
+		t.Fatal("old profile OAuth association remains after rename")
+	}
+	profile, exists := got.ProfileOAuth["google-readonly/new"]
+	if !exists {
+		t.Fatal("new profile has no OAuth association")
+	}
+	if profile.OAuthClientPath != clientPath {
+		t.Fatalf("client path after rename = %q, want unchanged %q", profile.OAuthClientPath, clientPath)
+	}
+	if len(profile.GrantedScopes) != len(originalScopes) || profile.GrantedScopes[0] != originalScopes[0] || profile.GrantedScopes[1] != originalScopes[1] {
+		t.Fatalf("scopes after rename = %v, want %v", profile.GrantedScopes, originalScopes)
+	}
+	assertToken(t, "new", "A-old")
+	assertNoToken(t, "old")
+}
+
+func TestRunRename_ProfileOAuthDestinationCollisionRetainsSource(t *testing.T) {
+	credtest.Setup(t)
+	seedToken(t, "old")
+	oldPath := filepath.Join(t.TempDir(), "old-client.json")
+	newPath := filepath.Join(t.TempDir(), "new-client.json")
+	if err := config.SaveConfig(&config.Config{
+		CredentialRef: "google-readonly/default",
+		ProfileOAuth: map[string]config.ProfileOAuthConfig{
+			"google-readonly/old": {OAuthClientPath: oldPath},
+			"google-readonly/new": {OAuthClientPath: newPath},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := runRenameQuiet(t, "old", "new")
+	if err == nil || !strings.Contains(err.Error(), "profile OAuth config") {
+		t.Fatalf("rename with config collision = %v, want profile OAuth config error", err)
+	}
+	got, err := config.LoadConfigForRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProfileOAuth["google-readonly/old"].OAuthClientPath != oldPath || got.ProfileOAuth["google-readonly/new"].OAuthClientPath != newPath {
+		t.Fatalf("profile associations changed after collision: %#v", got.ProfileOAuth)
+	}
+	assertToken(t, "old", "A-old")
+	assertNoToken(t, "new")
+}
+
 func TestRunRename_CollisionRetainsSourceAndDestination(t *testing.T) {
 	credtest.Setup(t)
 	seedToken(t, "old")
@@ -582,7 +652,14 @@ func TestRunRename_RetryAfterTransientConfigFailure(t *testing.T) {
 func TestRunRename_DeleteFailureRetainsBothBundles(t *testing.T) {
 	credtest.Setup(t)
 	seedToken(t, "old")
-	if err := config.SaveConfig(&config.Config{CredentialRef: "google-readonly/old"}); err != nil {
+	clientPath := filepath.Join(t.TempDir(), "old-client.json")
+	scopes := []string{"scope:mail", "scope:profile"}
+	if err := config.SaveConfig(&config.Config{
+		CredentialRef: "google-readonly/old",
+		ProfileOAuth: map[string]config.ProfileOAuthConfig{
+			"google-readonly/old": {OAuthClientPath: clientPath, GrantedScopes: scopes},
+		},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	original := renameDelete
@@ -601,6 +678,62 @@ func TestRunRename_DeleteFailureRetainsBothBundles(t *testing.T) {
 	}
 	if cfg.CredentialRef != "google-readonly/new" {
 		t.Fatalf("credential_ref after delete failure = %q, want new", cfg.CredentialRef)
+	}
+	for _, ref := range []string{"google-readonly/old", "google-readonly/new"} {
+		if got := cfg.OAuthClientPathForRef(ref); got != clientPath {
+			t.Errorf("OAuth client path for %s = %q, want %q", ref, got, clientPath)
+		}
+		if got := cfg.GrantedScopesForRef(ref); len(got) != len(scopes) || got[0] != scopes[0] || got[1] != scopes[1] {
+			t.Errorf("granted scopes for %s = %v, want %v", ref, got, scopes)
+		}
+	}
+	assertToken(t, "old", "A-old")
+	assertToken(t, "new", "A-old")
+}
+
+func TestRunRename_ProfileOAuthCleanupFailureWarnsAfterTokenMove(t *testing.T) {
+	credtest.Setup(t)
+	seedToken(t, "old")
+	clientPath := filepath.Join(t.TempDir(), "old-client.json")
+	if err := config.SaveConfig(&config.Config{
+		CredentialRef: "google-readonly/old",
+		ProfileOAuth: map[string]config.ProfileOAuthConfig{
+			"google-readonly/old": {OAuthClientPath: clientPath},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	original := renameSaveConfig
+	attempts := 0
+	renameSaveConfig = func(cfg *config.Config) error {
+		attempts++
+		if attempts == 2 {
+			return errors.New("cleanup config unavailable")
+		}
+		return original(cfg)
+	}
+	t.Cleanup(func() { renameSaveConfig = original })
+
+	var runErr error
+	capture(t, func() {
+		stderr := captureStderr(t, func() { runErr = runRename("old", "new") })
+		if !strings.Contains(stderr, "old profile OAuth association could not be removed") {
+			t.Errorf("stderr = %q, want stale mapping warning", stderr)
+		}
+	})
+	if runErr != nil {
+		t.Fatalf("runRename after OAuth cleanup failure: %v", runErr)
+	}
+	assertNoToken(t, "old")
+	assertToken(t, "new", "A-old")
+	cfg, err := config.LoadConfigForRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{"google-readonly/old", "google-readonly/new"} {
+		if got := cfg.OAuthClientPathForRef(ref); got != clientPath {
+			t.Errorf("OAuth client path for %s = %q, want %q", ref, got, clientPath)
+		}
 	}
 }
 

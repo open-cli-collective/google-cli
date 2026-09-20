@@ -364,6 +364,11 @@ func runRename(oldProfile, newProfile string) error {
 	if err != nil {
 		return err
 	}
+	if oldRef != newRef {
+		if _, exists := cfg.ProfileOAuth[newRef]; exists {
+			return fmt.Errorf("profile OAuth config for %s already exists", newRef)
+		}
+	}
 	st, err := OpenRefStore(oldRef)
 	if err != nil {
 		return err
@@ -388,14 +393,23 @@ func runRename(oldProfile, newProfile string) error {
 	if activeChanged {
 		cfg.CredentialRef = newRef
 		cfg.SetCredentialRefSource(config.RefSourceConfig)
+	}
+	profileOAuth, profileOAuthMoved := cfg.ProfileOAuth[oldRef]
+	if profileOAuthMoved {
+		// Keep the source association until the source token has been deleted.
+		// If that deletion fails, both stored tokens still resolve to their
+		// original client configuration.
+		cfg.ProfileOAuth[newRef] = profileOAuth
+	}
+	if activeChanged || profileOAuthMoved {
 		if err := renameSaveConfig(cfg); err != nil {
 			// The source is still intact, so remove the copy before returning.
 			// That makes a transient config failure retryable while preserving
 			// the token if rollback itself cannot complete.
 			if rollbackErr := renameDelete(st, newProfile); rollbackErr != nil {
-				return fmt.Errorf("saving active profile %s failed after copying credentials; source was retained and copied destination may remain: %w (rollback failed: %w)", oldRef, err, rollbackErr)
+				return fmt.Errorf("saving profile configuration after copying credentials failed; source was retained and copied destination may remain: %w (rollback failed: %w)", err, rollbackErr)
 			}
-			return fmt.Errorf("saving active profile %s failed after copying credentials; source was retained and copied destination was removed: %w", oldRef, err)
+			return fmt.Errorf("saving profile configuration after copying credentials failed; source was retained and copied destination was removed: %w", err)
 		}
 	}
 
@@ -403,6 +417,15 @@ func runRename(oldProfile, newProfile string) error {
 	// place. A partial delete leaves the destination copy, so no token is lost.
 	if err := renameDelete(st, oldProfile); err != nil {
 		return fmt.Errorf("profile copied to %s but source %s could not be removed: %w", newRef, oldRef, err)
+	}
+	if profileOAuthMoved {
+		delete(cfg.ProfileOAuth, oldRef)
+		if err := renameSaveConfig(cfg); err != nil {
+			// Credentials have already moved. A stale source mapping is safe for
+			// the current rename and can be cleaned up later; never roll back the
+			// destination or recreate a token just to remove it.
+			fmt.Fprintf(os.Stderr, "warning: credentials renamed from %s to %s but the old profile OAuth association could not be removed: %v\n", oldRef, newRef, err)
+		}
 	}
 
 	// Identity data is disposable, but preserving its verification timestamp

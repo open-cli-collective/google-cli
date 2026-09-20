@@ -312,6 +312,71 @@ func TestSaveConfig(t *testing.T) {
 	})
 }
 
+func TestProfileOAuthResolversAndRoundTrip(t *testing.T) {
+	hermeticConfig(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := "google-readonly/personal"
+	sharedPath := filepath.Join(home, "shared.json")
+	profilePath := filepath.Join(home, "personal.json")
+	sharedScopes := []string{"scope:shared"}
+	profileScopes := []string{"scope:personal"}
+	cfg := &Config{
+		OAuthClientPath: sharedPath,
+		GrantedScopes:   sharedScopes,
+		ProfileOAuth: map[string]ProfileOAuthConfig{
+			ref: {OAuthClientPath: "~/personal.json", GrantedScopes: profileScopes},
+		},
+	}
+
+	if got := cfg.OAuthClientPathForRef(ref); got != profilePath {
+		t.Fatalf("profile OAuth path = %q, want %q", got, profilePath)
+	}
+	if got := cfg.OAuthClientPathForRef("google-readonly/work"); got != sharedPath {
+		t.Fatalf("fallback OAuth path = %q, want %q", got, sharedPath)
+	}
+	gotScopes := cfg.GrantedScopesForRef(ref)
+	if len(gotScopes) != 1 || gotScopes[0] != "scope:personal" {
+		t.Fatalf("profile scopes = %v, want personal scope", gotScopes)
+	}
+	gotScopes[0] = "mutated"
+	if cfg.ProfileOAuth[ref].GrantedScopes[0] != "scope:personal" {
+		t.Fatal("GrantedScopesForRef must return a copy")
+	}
+	if got := cfg.GrantedScopesForRef("google-readonly/work"); len(got) != 1 || got[0] != "scope:shared" {
+		t.Fatalf("fallback scopes = %v, want shared scope", got)
+	}
+
+	if err := SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	loaded, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got := loaded.OAuthClientPathForRef(ref); got != profilePath {
+		t.Fatalf("round-trip profile OAuth path = %q, want %q", got, profilePath)
+	}
+	if got := loaded.GrantedScopesForRef(ref); len(got) != 1 || got[0] != "scope:personal" {
+		t.Fatalf("round-trip profile scopes = %v, want personal scope", got)
+	}
+}
+
+func TestProfileOAuthEmptyScopesAreAuthoritative(t *testing.T) {
+	t.Parallel()
+	cfg := &Config{
+		GrantedScopes: []string{"scope:shared"},
+		ProfileOAuth: map[string]ProfileOAuthConfig{
+			"google-readonly/personal": {OAuthClientPath: "/tmp/personal.json"},
+		},
+	}
+	if got := cfg.GrantedScopesForRef("google-readonly/personal"); len(got) != 0 {
+		t.Fatalf("profile with no recorded scopes inherited shared scopes: %v", got)
+	}
+}
+
 func TestCacheDirResolvers(t *testing.T) {
 	t.Run("GetCacheDir is under os.UserCacheDir()/DirName, not the config tree", func(t *testing.T) {
 		hermeticConfig(t)

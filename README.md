@@ -67,7 +67,7 @@ grw contacts create --given-name Test --email t@example.com --dry-run
 grw drive trash --query "name contains 'old'" --dry-run
 ```
 
-One desktop OAuth client can be used by both tools, but each tool asks for consent and stores its token under its own identity. Google Workspace administrators should start with [`WORKSPACE_ADMINS.md`](WORKSPACE_ADMINS.md).
+One desktop OAuth client can be imported into profiles in both tools, but each CLI asks for consent and stores its token separately. See [OAuth setup](WORKSPACE_ADMINS.md) for personal External/testing and organization Internal guidance, including profile-specific client imports.
 
 ## Profiles
 

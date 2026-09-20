@@ -74,6 +74,10 @@ type Config struct {
 	// GrantedScopes is preserved: detects when a token's scopes drift from
 	// what init granted. Not a secret.
 	GrantedScopes []string `yaml:"granted_scopes,omitempty" json:"granted_scopes,omitempty"`
+	// ProfileOAuth stores client/scopes owned by a specific credential_ref.
+	// Missing entries continue to use the legacy shared OAuthClientPath and
+	// GrantedScopes fields above.
+	ProfileOAuth map[string]ProfileOAuthConfig `yaml:"profile_oauth,omitempty" json:"profile_oauth,omitempty"`
 	// Keyring carries the optional §1.4 explicit file-backend opt-in.
 	Keyring KeyringConfig `yaml:"keyring,omitempty" json:"-"`
 
@@ -83,6 +87,51 @@ type Config struct {
 	// never serialized: it is provenance for error attribution and `config
 	// show`, not configuration.
 	credentialRefSource RefSource
+}
+
+// ProfileOAuthConfig binds a profile to its own OAuth desktop client JSON and
+// records the scopes that profile granted. It contains no access token.
+type ProfileOAuthConfig struct {
+	OAuthClientPath string   `yaml:"oauth_client_path,omitempty" json:"oauth_client_path,omitempty"`
+	GrantedScopes   []string `yaml:"granted_scopes,omitempty" json:"granted_scopes,omitempty"`
+}
+
+// OAuthClientPathForRef returns the selected profile's client JSON path, or
+// the legacy shared path when that ref has no profile-specific association.
+func (c *Config) OAuthClientPathForRef(ref string) string {
+	if c == nil {
+		return ""
+	}
+	if profile, ok := c.ProfileOAuth[ref]; ok && profile.OAuthClientPath != "" {
+		return ExpandPath(profile.OAuthClientPath)
+	}
+	return ExpandPath(c.OAuthClientPath)
+}
+
+// GrantedScopesForRef returns a copy of the scopes recorded for ref. A
+// profile-specific entry is authoritative even when its list is empty; this
+// avoids treating another profile's consent as this profile's.
+func (c *Config) GrantedScopesForRef(ref string) []string {
+	if c == nil {
+		return nil
+	}
+	if profile, ok := c.ProfileOAuth[ref]; ok {
+		return append([]string(nil), profile.GrantedScopes...)
+	}
+	return append([]string(nil), c.GrantedScopes...)
+}
+
+// SetProfileOAuth updates one profile's OAuth-client association and recorded
+// scopes without changing the legacy shared-client fallback.
+func (c *Config) SetProfileOAuth(ref string, profile ProfileOAuthConfig) {
+	if c.ProfileOAuth == nil {
+		c.ProfileOAuth = make(map[string]ProfileOAuthConfig)
+	}
+	if profile.OAuthClientPath != "" {
+		profile.OAuthClientPath = ExpandPath(profile.OAuthClientPath)
+	}
+	profile.GrantedScopes = append([]string(nil), profile.GrantedScopes...)
+	c.ProfileOAuth[ref] = profile
 }
 
 // RefSource identifies where the resolved CredentialRef came from, so auth
@@ -392,6 +441,13 @@ func (c *Config) applyDefaults() {
 	} else {
 		c.OAuthClientPath = ExpandPath(c.OAuthClientPath)
 	}
+	for ref, profile := range c.ProfileOAuth {
+		if profile.OAuthClientPath != "" {
+			profile.OAuthClientPath = ExpandPath(profile.OAuthClientPath)
+		}
+		profile.GrantedScopes = append([]string(nil), profile.GrantedScopes...)
+		c.ProfileOAuth[ref] = profile
+	}
 }
 
 // SaveConfig writes config.yml at 0600 under a 0700 directory using an atomic
@@ -409,6 +465,16 @@ func SaveConfig(cfg *Config) error {
 	// caller's *Config (a caller inspecting OAuthClientPath after SaveConfig
 	// would otherwise observe an unexpectedly rewritten value).
 	out := *cfg
+	if cfg.ProfileOAuth != nil {
+		out.ProfileOAuth = make(map[string]ProfileOAuthConfig, len(cfg.ProfileOAuth))
+		for ref, profile := range cfg.ProfileOAuth {
+			if profile.OAuthClientPath != "" {
+				profile.OAuthClientPath = ExpandPath(profile.OAuthClientPath)
+			}
+			profile.GrantedScopes = append([]string(nil), profile.GrantedScopes...)
+			out.ProfileOAuth[ref] = profile
+		}
+	}
 	if out.OAuthClientPath != "" {
 		out.OAuthClientPath = ExpandPath(out.OAuthClientPath)
 	}
@@ -441,4 +507,29 @@ func SaveConfig(cfg *Config) error {
 		return fmt.Errorf("finalizing config file: %w", err)
 	}
 	return nil
+}
+
+// NewProfileOAuthClientPath reserves a unique managed location for an
+// explicitly imported profile client. The caller writes the validated JSON
+// there and removes the file if its config association cannot be saved.
+func NewProfileOAuthClientPath() (string, error) {
+	dir, err := GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, "oauth-client-profile-*.json")
+	if err != nil {
+		return "", fmt.Errorf("creating profile OAuth client path: %w", err)
+	}
+	path := f.Name()
+	if err := f.Chmod(TokenPerm); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return "", fmt.Errorf("setting profile OAuth client permissions: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("closing profile OAuth client file: %w", err)
+	}
+	return path, nil
 }
