@@ -38,11 +38,12 @@ func NewCommand() *cobra.Command {
 		Long: `Manage the credential profiles stored in the OS keyring.
 
 A profile holds one Google account's OAuth token. The active profile is the
-credential_ref in config.yml (overridable per invocation with --ref or the
-<SERVICE>_CREDENTIAL_REF environment variable).`,
+credential_ref in config.yml (overridable per invocation with --profile or
+--ref, or with the <SERVICE>_CREDENTIAL_REF environment variable).`,
 	}
 	cmd.AddCommand(newListCommand())
 	cmd.AddCommand(newUseCommand())
+	cmd.AddCommand(newRenameCommand())
 	return cmd
 }
 
@@ -51,6 +52,23 @@ credential_ref in config.yml (overridable per invocation with --ref or the
 // unresolved §1.8 migration conflict — exactly when the user most needs to
 // see what exists.
 var OpenStore = keychain.OpenNoMigrate
+
+// OpenRefStore opens the source profile explicitly. Rename must use this
+// seam rather than the active store so a global selector cannot redirect the
+// positional source.
+var OpenRefStore = keychain.OpenRef
+
+var (
+	// These seams keep the failure ordering testable without touching a real
+	// keyring or config file. The production path still uses the concrete
+	// credstore-backed operations directly.
+	renameCopy = func(st *keychain.Store, oldProfile, newProfile string) error {
+		return st.CopyProfile(oldProfile, newProfile)
+	}
+	renameDelete     = func(st *keychain.Store, profile string) error { return st.DeleteProfile(profile) }
+	renameSaveConfig = config.SaveConfig
+	renameIdentity   = identitycache.Rename
+)
 
 // VerifyRef live-verifies one profile's token by asking the Gmail profile
 // for its email (gmail scope is granted by every CLI built on this library).
@@ -186,7 +204,7 @@ func runList(ctx context.Context, jsonOut, check bool) error {
 	prod := config.ProductName()
 	fmt.Println()
 	fmt.Printf("Active: %s (via %s)\n", activeRef, keychain.DescribeRefSource(st.RefSource()))
-	fmt.Printf("Switch with '%s profiles use <profile>', or per invocation with --ref.\n", prod)
+	fmt.Printf("Switch with '%s profiles use <profile>', or per invocation with --profile <name>.\n", prod)
 	for _, r := range rows {
 		if r.Active && !r.TokenPresent {
 			fmt.Printf("The active profile has no stored token - run '%s init' to authenticate it.\n", prod)
@@ -305,6 +323,123 @@ func runUse(arg string) error {
 	if env := os.Getenv(keychain.CredentialRefEnvVar()); env != "" && env != ref {
 		fmt.Printf("Note: %s=%s is set in this shell and overrides the switched profile.\n",
 			keychain.CredentialRefEnvVar(), env)
+	}
+	return nil
+}
+
+func newRenameCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "rename <old> <new>",
+		Short: "Rename a credential profile",
+		Long: `Rename a profile in this CLI's credential namespace without
+re-authenticating it. The destination must not already contain credentials;
+other profiles remain unchanged. The saved active profile is updated when it
+points at the old name.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runRename(args[0], args[1])
+		},
+	}
+	return cmd
+}
+
+func runRename(oldProfile, newProfile string) error {
+	service, _, err := credstore.ParseRef(config.DefaultCredentialRef)
+	if err != nil {
+		return fmt.Errorf("resolve CLI service: %w", err)
+	}
+	oldRef, err := credstore.FormatRef(service, oldProfile)
+	if err != nil {
+		return fmt.Errorf("invalid old profile %q: %w", oldProfile, err)
+	}
+	newRef, err := credstore.FormatRef(service, newProfile)
+	if err != nil {
+		return fmt.Errorf("invalid new profile %q: %w", newProfile, err)
+	}
+
+	// Load the persisted binding before touching credentials. Runtime selector
+	// overrides are intentionally absent here: rename's positional old name is
+	// always the source, and only the saved config binding may be rewritten.
+	cfg, err := config.LoadConfigForRuntime()
+	if err != nil {
+		return err
+	}
+	if oldRef != newRef {
+		if _, exists := cfg.ProfileOAuth[newRef]; exists {
+			return fmt.Errorf("profile OAuth config for %s already exists", newRef)
+		}
+	}
+	st, err := OpenRefStore(oldRef)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+
+	if oldProfile == newProfile {
+		if err := renameCopy(st, oldProfile, newProfile); err != nil {
+			return err
+		}
+		fmt.Printf("Profile %s is already named %s.\n", oldRef, newRef)
+		return nil
+	}
+
+	// Copy first: SetBundle validates every key and rolls back partial writes;
+	// the source is retained when the copy or any later state update fails.
+	if err := renameCopy(st, oldProfile, newProfile); err != nil {
+		return err
+	}
+
+	activeChanged := cfg.CredentialRef == oldRef
+	if activeChanged {
+		cfg.CredentialRef = newRef
+		cfg.SetCredentialRefSource(config.RefSourceConfig)
+	}
+	profileOAuth, profileOAuthMoved := cfg.ProfileOAuth[oldRef]
+	if profileOAuthMoved {
+		// Keep the source association until the source token has been deleted.
+		// If that deletion fails, both stored tokens still resolve to their
+		// original client configuration.
+		cfg.ProfileOAuth[newRef] = profileOAuth
+	}
+	if activeChanged || profileOAuthMoved {
+		if err := renameSaveConfig(cfg); err != nil {
+			// The source is still intact, so remove the copy before returning.
+			// That makes a transient config failure retryable while preserving
+			// the token if rollback itself cannot complete.
+			if rollbackErr := renameDelete(st, newProfile); rollbackErr != nil {
+				return fmt.Errorf("saving profile configuration after copying credentials failed; source was retained and copied destination may remain: %w (rollback failed: %w)", err, rollbackErr)
+			}
+			return fmt.Errorf("saving profile configuration after copying credentials failed; source was retained and copied destination was removed: %w", err)
+		}
+	}
+
+	// Delete only after the destination and any required config update are in
+	// place. A partial delete leaves the destination copy, so no token is lost.
+	if err := renameDelete(st, oldProfile); err != nil {
+		return fmt.Errorf("profile copied to %s but source %s could not be removed: %w", newRef, oldRef, err)
+	}
+	if profileOAuthMoved {
+		delete(cfg.ProfileOAuth, oldRef)
+		if err := renameSaveConfig(cfg); err != nil {
+			// Credentials have already moved. A stale source mapping is safe for
+			// the current rename and can be cleaned up later; never roll back the
+			// destination or recreate a token just to remove it.
+			fmt.Fprintf(os.Stderr, "warning: credentials renamed from %s to %s but the old profile OAuth association could not be removed: %v\n", oldRef, newRef, err)
+		}
+	}
+
+	// Identity data is disposable, but preserving its verification timestamp
+	// makes the rename transparent to `profiles list`.
+	if err := renameIdentity(oldProfile, newProfile); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: credentials renamed from %s to %s but cached identity was not moved: %v\n", oldRef, newRef, err)
+	}
+
+	fmt.Printf("Renamed profile %s to %s.\n", oldRef, newRef)
+	if activeChanged {
+		fmt.Printf("Active profile is now %s.\n", newRef)
+	}
+	if env := os.Getenv(keychain.CredentialRefEnvVar()); env == oldRef {
+		fmt.Printf("Note: %s still points to %s; update it in this shell.\n", keychain.CredentialRefEnvVar(), oldRef)
 	}
 	return nil
 }

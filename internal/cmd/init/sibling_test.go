@@ -3,6 +3,8 @@ package initcmd
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/open-cli-collective/google-cli/internal/config"
 )
 
 // TestEnsureCredentials_ReusesSiblingOAuthClient proves the seamless-setup
@@ -12,19 +14,33 @@ func TestEnsureCredentials_ReusesSiblingOAuthClient(t *testing.T) {
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
 
-	credPath := filepath.Join(t.TempDir(), "oauth_client.json")
+	const targetRef = "google-readwrite/personal"
+	credPath, sharedPath := separateProfileCredentialPath(t, &d, targetRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
 	siblingPath := filepath.Join(t.TempDir(), "sibling-oauth_client.json")
+	const legacyClient = "existing-shared-client"
+	fs.files[sharedPath] = []byte(legacyClient)
 	fs.files[siblingPath] = []byte(validOAuthJSON)
 
 	prompter := &stubPrompter{}
 	d.Prompter = prompter
 	d.DiscoverSiblingClientJSON = func() (string, string, bool) { return siblingPath, "google-readonly", true }
 
-	if err := ensureCredentials(d, &initOptions{}, credPath); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, credPath, targetRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
-	if _, ok := fs.files[credPath]; !ok {
-		t.Fatal("expected the sibling OAuth client JSON to be written to credPath")
+	if got, ok := fs.files[profilePath]; !ok || string(got) != validOAuthJSON {
+		t.Fatal("expected the sibling OAuth client JSON to be copied to the selected profile")
+	}
+	if got := string(fs.files[sharedPath]); got != legacyClient {
+		t.Fatalf("profile-scoped sibling import changed the legacy shared path to %q", got)
+	}
+	cfg, err := d.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.ProfileOAuth[targetRef].OAuthClientPath; got != profilePath {
+		t.Fatalf("sibling OAuth client association = %q, want %q", got, profilePath)
 	}
 	if len(prompter.calls) != 0 {
 		t.Errorf("the paste wizard must not run when a sibling client is reused; calls=%v", prompter.calls)
@@ -42,7 +58,7 @@ func TestEnsureCredentials_NoSiblingFallsThroughToWizard(t *testing.T) {
 	d.Prompter = prompter
 	d.DiscoverSiblingClientJSON = func() (string, string, bool) { return "", "", false }
 
-	if err := ensureCredentials(d, &initOptions{}, credPath); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, credPath, config.DefaultCredentialRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
 	if len(prompter.calls) == 0 {

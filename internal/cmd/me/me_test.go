@@ -13,6 +13,7 @@ import (
 
 	"github.com/open-cli-collective/google-cli/internal/api/people"
 	"github.com/open-cli-collective/google-cli/internal/config"
+	"github.com/open-cli-collective/google-cli/internal/keychain"
 )
 
 // mockPeopleClient is a stub for the exported PeopleClient interface.
@@ -394,6 +395,41 @@ func TestRunStaleRecordedScopesTriggersReauthMessage(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "gro init") {
 		t.Errorf("expected 'gro init' guidance in stderr, got %q", errOut.String())
+	}
+}
+
+func TestRunStaleScopesUseSelectedProfile(t *testing.T) {
+	// Not Parallel: mutates env, the selected-ref override, and ClientFactory.
+	withConfigDir(t)
+	ref := "google-readonly/personal"
+	t.Setenv(keychain.CredentialRefEnvVar(), "")
+	keychain.SetCredentialRefOverride(ref, true)
+	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
+	if err := config.SaveConfig(&config.Config{
+		CredentialRef: config.DefaultCredentialRef,
+		GrantedScopes: config.Scopes(),
+		ProfileOAuth: map[string]config.ProfileOAuthConfig{
+			ref: {GrantedScopes: []string{"https://www.googleapis.com/auth/gmail.modify"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	withMockClient(t, &mockPeopleClient{
+		GetMeFunc: func(_ context.Context) (*people.Profile, error) {
+			t.Fatal("client should not be called when selected profile scopes are stale")
+			return nil, nil
+		},
+	})
+	var out, errOut bytes.Buffer
+	err := run(context.Background(), &out, &errOut, false, false)
+	if !errors.Is(err, errReauth) {
+		t.Fatalf("expected errReauth for selected profile, got %v", err)
+	}
+	if !strings.Contains(errOut.String(), "gro init") {
+		t.Fatalf("expected reauth guidance for selected profile, got %q", errOut.String())
+	}
+	if got := grantedScopes(); len(got) != 1 || got[0] != "https://www.googleapis.com/auth/gmail.modify" {
+		t.Fatalf("extended scopes = %v, want the selected profile's recorded scope", got)
 	}
 }
 

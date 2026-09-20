@@ -1,13 +1,170 @@
 package auth
 
 import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/oauth2"
 
 	"github.com/open-cli-collective/google-cli/internal/config"
+	"github.com/open-cli-collective/google-cli/internal/credtest"
+	"github.com/open-cli-collective/google-cli/internal/keychain"
 )
+
+func TestGetOAuthConfigForRefSelectsProfileClient(t *testing.T) {
+	credtest.Setup(t)
+	defaultPath := filepath.Join(credtest.ConfigDir(t), "default.json")
+	profilePath := filepath.Join(credtest.ConfigDir(t), "profile.json")
+	if err := os.WriteFile(defaultPath, []byte(testOAuthClientJSON("default-client", "https://oauth2.googleapis.com/token")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(profilePath, []byte(testOAuthClientJSON("profile-client", "https://oauth2.googleapis.com/token")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	const ref = "google-readonly/personal"
+	if err := config.SaveConfig(&config.Config{
+		CredentialRef:   config.DefaultCredentialRef,
+		OAuthClientPath: defaultPath,
+		ProfileOAuth: map[string]config.ProfileOAuthConfig{
+			ref: {OAuthClientPath: profilePath},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := GetOAuthConfigForRef(ref)
+	if err != nil {
+		t.Fatalf("GetOAuthConfigForRef: %v", err)
+	}
+	if got.ClientID != "profile-client" {
+		t.Fatalf("profile ClientID = %q, want profile-client", got.ClientID)
+	}
+	legacy, err := GetOAuthConfigForRef(config.DefaultCredentialRef)
+	if err != nil {
+		t.Fatalf("GetOAuthConfigForRef(default): %v", err)
+	}
+	if legacy.ClientID != "default-client" {
+		t.Fatalf("legacy ClientID = %q, want default-client", legacy.ClientID)
+	}
+}
+
+func TestGetHTTPClientForRefRefreshesWithMatchingOAuthClient(t *testing.T) {
+	credtest.Setup(t)
+	keychain.SetCredentialRefOverride("", false)
+	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
+	const profileRef = "google-readonly/personal"
+
+	refreshClientID := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "bad form", http.StatusBadRequest)
+				return
+			}
+			clientID := r.Form.Get("client_id")
+			if clientID == "" {
+				clientID, _, _ = r.BasicAuth()
+			}
+			refreshClientID <- clientID
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"access_token":"refreshed-profile-token","token_type":"Bearer","expires_in":3600}`)
+		case "/api":
+			if got := r.Header.Get("Authorization"); got != "Bearer refreshed-profile-token" {
+				http.Error(w, "wrong bearer token", http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	configDir := credtest.ConfigDir(t)
+	defaultPath := filepath.Join(configDir, "default.json")
+	profilePath := filepath.Join(configDir, "profile.json")
+	if err := os.WriteFile(defaultPath, []byte(testOAuthClientJSON("default-client", server.URL+"/token")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(profilePath, []byte(testOAuthClientJSON("profile-client", server.URL+"/token")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveConfig(&config.Config{
+		CredentialRef:   config.DefaultCredentialRef,
+		OAuthClientPath: defaultPath,
+		ProfileOAuth: map[string]config.ProfileOAuthConfig{
+			profileRef: {OAuthClientPath: profilePath},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	seed := func(ref string, token *oauth2.Token) {
+		t.Helper()
+		st, err := keychain.OpenRef(ref)
+		if err != nil {
+			t.Fatalf("OpenRef(%s): %v", ref, err)
+		}
+		if err := st.SetToken(token); err != nil {
+			_ = st.Close()
+			t.Fatalf("SetToken(%s): %v", ref, err)
+		}
+		if err := st.Close(); err != nil {
+			t.Fatalf("Close(%s): %v", ref, err)
+		}
+	}
+	seed(config.DefaultCredentialRef, &oauth2.Token{AccessToken: "unchanged-default", RefreshToken: "default-refresh", TokenType: "Bearer"})
+	seed(profileRef, &oauth2.Token{AccessToken: "expired-profile", RefreshToken: "profile-refresh", TokenType: "Bearer", Expiry: time.Now().Add(-time.Hour)})
+
+	client, err := GetHTTPClientForRef(context.Background(), profileRef)
+	if err != nil {
+		t.Fatalf("GetHTTPClientForRef: %v", err)
+	}
+	resp, err := client.Get(server.URL + "/api")
+	if err != nil {
+		t.Fatalf("GET api: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("GET api status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+	select {
+	case got := <-refreshClientID:
+		if got != "profile-client" {
+			t.Fatalf("refresh client_id = %q, want profile-client", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("profile token was not refreshed")
+	}
+
+	assertToken := func(ref, want string) {
+		t.Helper()
+		st, err := keychain.OpenRef(ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tok, err := st.Token()
+		_ = st.Close()
+		if err != nil || tok.AccessToken != want {
+			t.Fatalf("token at %s = (%q, %v), want %q", ref, tok.AccessToken, err, want)
+		}
+	}
+	assertToken(profileRef, "refreshed-profile-token")
+	assertToken(config.DefaultCredentialRef, "unchanged-default")
+}
+
+func testOAuthClientJSON(clientID, tokenURL string) string {
+	return fmt.Sprintf(`{"installed":{"client_id":%q,"project_id":"test","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":%q,"auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"test-secret","redirect_uris":["http://localhost"]}}`, clientID, tokenURL)
+}
 
 // TestDeprecatedWrappers verifies that auth package wrappers delegate to config package
 func TestDeprecatedWrappers(t *testing.T) {

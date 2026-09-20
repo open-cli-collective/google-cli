@@ -165,13 +165,14 @@ func runShow(jsonOut, verbose bool) error {
 		BackendSource:       string(src),
 		KeyringBackend:      cfg.Keyring.Backend, // selector value from config.yml; "" if unset
 		OAuthTokenPresent:   hasTok,
-		OAuthClientPath:     config.ShortenPath(cfg.OAuthClientPath),
+		OAuthClientPath:     config.ShortenPath(cfg.OAuthClientPathForRef(st.Ref())),
 		OAuthClientPresent:  false,
 	}
+	clientPath := cfg.OAuthClientPathForRef(st.Ref())
 	if backend == credstore.BackendFile {
 		status.PassphraseSource = keychain.PassphraseSource(st.Service())
 	}
-	if data, rerr := os.ReadFile(cfg.OAuthClientPath); rerr == nil { //nolint:gosec // deployment-material path
+	if data, rerr := os.ReadFile(clientPath); rerr == nil { //nolint:gosec // deployment-material path
 		status.OAuthClientPresent = true
 		status.OAuthClientFingerprint = "sha256:" + fileFingerprint(data)
 		if verbose {

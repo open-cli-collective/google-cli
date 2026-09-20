@@ -64,6 +64,57 @@ func TestPutRejectsEmpty(t *testing.T) {
 	}
 }
 
+func TestRenamePreservesIdentityAndVerificationTime(t *testing.T) {
+	credtest.Setup(t)
+	if err := Put("old", "user@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	want := Load()["old"]
+	if err := Rename("old", "new"); err != nil {
+		t.Fatal(err)
+	}
+	m := Load()
+	if _, ok := m["old"]; ok {
+		t.Fatal("old identity remains after rename")
+	}
+	if got := m["new"]; got != want {
+		t.Errorf("renamed identity = %+v, want %+v", got, want)
+	}
+}
+
+func TestRenameReplacesOccupiedDestination(t *testing.T) {
+	credtest.Setup(t)
+	if err := Put("old", "old@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Put("new", "new@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Rename("old", "new"); err != nil {
+		t.Fatal(err)
+	}
+	m := Load()
+	if _, ok := m["old"]; ok {
+		t.Errorf("old identity remains after replacement: %+v", m)
+	}
+	if m["new"].Email != "old@example.com" {
+		t.Errorf("destination identity = %+v, want source identity", m["new"])
+	}
+}
+
+func TestRenameRemovesStaleDestinationWhenSourceMissing(t *testing.T) {
+	credtest.Setup(t)
+	if err := Put("new", "stale@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Rename("old", "new"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := Load()["new"]; ok {
+		t.Fatal("stale destination identity remains after source-missing rename")
+	}
+}
+
 func TestLoadToleratesCorruptFile(t *testing.T) {
 	credtest.Setup(t)
 	dir, err := config.GetCacheDir()

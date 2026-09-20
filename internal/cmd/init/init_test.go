@@ -18,7 +18,6 @@ import (
 
 	"github.com/open-cli-collective/google-cli/internal/api/people"
 	"github.com/open-cli-collective/google-cli/internal/config"
-	"github.com/open-cli-collective/google-cli/internal/keychain"
 	"github.com/open-cli-collective/google-cli/internal/testutil"
 	"github.com/open-cli-collective/google-cli/internal/view"
 )
@@ -212,11 +211,21 @@ func baseDeps(t *testing.T, fs *fakeFS) initDeps {
 	t.Helper()
 	credPath := filepath.Join(t.TempDir(), "credentials.json")
 	configPath := filepath.Join(filepath.Dir(credPath), "config.json")
+	profileClientPath := filepath.Join(filepath.Dir(credPath), "oauth-client-profile-test.json")
 	cfgPtr := &config.Config{}
 
 	return initDeps{
-		View:               view.NewWithWriters(&bytes.Buffer{}, &bytes.Buffer{}),
-		GetCredentialsPath: func() (string, error) { return credPath, nil },
+		View:                      view.NewWithWriters(&bytes.Buffer{}, &bytes.Buffer{}),
+		GetCredentialsPath:        func(_ string) (string, error) { return credPath, nil },
+		NewProfileOAuthClientPath: func() (string, error) { return profileClientPath, nil },
+		RemoveFile: func(path string) error {
+			delete(fs.files, path)
+			delete(fs.perms, path)
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			return nil
+		},
 		ReadFile: func(p string) ([]byte, error) {
 			if b, err := fs.ReadFile(p); err == nil {
 				return b, nil
@@ -238,16 +247,21 @@ func baseDeps(t *testing.T, fs *fakeFS) initDeps {
 		ClipboardReadAll:   func() (string, error) { return "", errors.New("disabled") },
 		OpenBrowser:        func(_ string) error { return nil },
 		EnsureMigrated:     func() error { return nil },
-		HasStoredToken:     func() bool { return false },
-		SetToken:           func(_ *oauth2.Token) error { return nil },
-		DeleteToken:        func() error { return nil },
-		GetStorageBackend:  func() string { return "test" },
-		StdinReadAll:       func() (string, error) { return "", nil },
+		DescribeTarget: func() (string, string, string) {
+			return config.DefaultCredentialRef, "config.yml", ""
+		},
+		HasStoredToken:    func() bool { return false },
+		SetToken:          func(_ *oauth2.Token) error { return nil },
+		DeleteToken:       func() error { return nil },
+		GetStorageBackend: func() string { return "test" },
+		StdinReadAll:      func() (string, error) { return "", nil },
 		ExchangeAuthCode: func(_ context.Context, _ *oauth2.Config, _ string) (*oauth2.Token, error) {
 			return &oauth2.Token{AccessToken: "tok"}, nil
 		},
-		GetOAuthConfig: func() (*oauth2.Config, error) { return &oauth2.Config{}, nil },
-		GmailVerify:    func(_ context.Context) (string, error) { return "ada@example.com", nil },
+		GetOAuthConfig: func(string) (*oauth2.Config, error) {
+			return &oauth2.Config{ClientID: "1234.apps.googleusercontent.com"}, nil
+		},
+		GmailVerify: func(_ context.Context) (string, error) { return "ada@example.com", nil },
 		PeopleGetMe: func(_ context.Context) (*people.Profile, error) {
 			return &people.Profile{ResourceName: "people/c1", DisplayName: "Ada", PrimaryEmail: "ada@example.com"}, nil
 		},
@@ -267,22 +281,35 @@ func TestEnsureCredentialsFlagFile(t *testing.T) {
 	if err := os.WriteFile(src, []byte(validOAuthJSON), 0644); err != nil {
 		t.Fatal(err)
 	}
-	dst, _ := d.GetCredentialsPath()
+	dst, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	fs.files[dst] = []byte("shared-client-must-remain-unchanged")
+	fs.perms[dst] = 0600
 
 	stub := &stubPrompter{}
 	d.Prompter = stub
-	if err := ensureCredentials(d, &initOptions{credentialsFile: src}, dst); err != nil {
+	if err := ensureCredentials(d, &initOptions{credentialsFile: src}, dst, config.DefaultCredentialRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
-	got, err := fs.ReadFile(dst)
+	got, err := fs.ReadFile(profilePath)
 	if err != nil {
-		t.Fatalf("dst not written: %v", err)
+		t.Fatalf("profile client not written: %v", err)
 	}
 	if string(got) != validOAuthJSON {
-		t.Errorf("dst content mismatch")
+		t.Errorf("profile client content mismatch")
 	}
-	if perm := fs.perms[dst]; perm != 0600 {
+	if perm := fs.perms[profilePath]; perm != 0600 {
 		t.Errorf("expected perms 0600, got %o", perm)
+	}
+	if string(fs.files[dst]) != "shared-client-must-remain-unchanged" {
+		t.Fatal("--credentials-file overwrote the legacy shared OAuth client")
+	}
+	cfg, err := d.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.ProfileOAuth[config.DefaultCredentialRef].OAuthClientPath; got != profilePath {
+		t.Fatalf("profile client association = %q, want %q", got, profilePath)
 	}
 	// --credentials-file bypasses the wizard entirely; audience must not be asked.
 	if contains(stub.calls, "audience") {
@@ -299,10 +326,82 @@ func TestEnsureCredentialsRejectsBadJSON(t *testing.T) {
 	if err := os.WriteFile(src, []byte("garbage"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	dst, _ := d.GetCredentialsPath()
+	dst, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
 	d.Prompter = &stubPrompter{}
-	if err := ensureCredentials(d, &initOptions{credentialsFile: src}, dst); err == nil {
+	if err := ensureCredentials(d, &initOptions{credentialsFile: src}, dst, config.DefaultCredentialRef); err == nil {
 		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestEnsureCredentialsRefusesDifferentClientWhenTokenExists(t *testing.T) {
+	t.Parallel()
+	fs := newFakeFS()
+	d := baseDeps(t, fs)
+	sharedPath, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	const oldPath = "/existing/profile-client.json"
+	const oldScopes = "https://www.googleapis.com/auth/gmail.readonly"
+	cfg := &config.Config{CredentialRef: config.DefaultCredentialRef}
+	cfg.SetProfileOAuth(config.DefaultCredentialRef, config.ProfileOAuthConfig{
+		OAuthClientPath: oldPath,
+		GrantedScopes:   []string{oldScopes},
+	})
+	d.LoadConfig = func() (*config.Config, error) { return cfg, nil }
+	d.HasStoredToken = func() bool { return true }
+	d.GetOAuthConfig = func(string) (*oauth2.Config, error) {
+		return &oauth2.Config{ClientID: "old-client.apps.googleusercontent.com"}, nil
+	}
+	fs.files[sharedPath] = []byte("legacy-shared-client")
+
+	src := filepath.Join(t.TempDir(), "downloaded.json")
+	if err := os.WriteFile(src, []byte(validOAuthJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := ensureCredentials(d, &initOptions{credentialsFile: src}, sharedPath, config.DefaultCredentialRef)
+	if err == nil || !strings.Contains(err.Error(), "different client ID") {
+		t.Fatalf("import with existing token = %v, want different-client error", err)
+	}
+	if got := cfg.OAuthClientPathForRef(config.DefaultCredentialRef); got != oldPath {
+		t.Fatalf("profile OAuth path changed to %q, want %q", got, oldPath)
+	}
+	if _, err := fs.ReadFile(profilePath); err == nil {
+		t.Fatal("staged profile OAuth JSON remained after refusing import")
+	}
+	if got := string(fs.files[sharedPath]); got != "legacy-shared-client" {
+		t.Fatalf("shared OAuth client changed to %q", got)
+	}
+}
+
+func TestEnsureCredentialsSameClientPreservesExistingProfileScopes(t *testing.T) {
+	t.Parallel()
+	fs := newFakeFS()
+	d := baseDeps(t, fs)
+	sharedPath, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	const oldScopes = "https://www.googleapis.com/auth/gmail.readonly"
+	cfg := &config.Config{CredentialRef: config.DefaultCredentialRef}
+	cfg.SetProfileOAuth(config.DefaultCredentialRef, config.ProfileOAuthConfig{
+		OAuthClientPath: "/existing/profile-client.json",
+		GrantedScopes:   []string{oldScopes},
+	})
+	d.LoadConfig = func() (*config.Config, error) { return cfg, nil }
+	d.HasStoredToken = func() bool { return true }
+	d.GetOAuthConfig = func(string) (*oauth2.Config, error) {
+		return &oauth2.Config{ClientID: "1234.apps.googleusercontent.com"}, nil
+	}
+	src := filepath.Join(t.TempDir(), "downloaded.json")
+	if err := os.WriteFile(src, []byte(validOAuthJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureCredentials(d, &initOptions{credentialsFile: src}, sharedPath, config.DefaultCredentialRef); err != nil {
+		t.Fatalf("same-client import: %v", err)
+	}
+	profile := cfg.ProfileOAuth[config.DefaultCredentialRef]
+	if profile.OAuthClientPath != profilePath {
+		t.Fatalf("profile client path = %q, want %q", profile.OAuthClientPath, profilePath)
+	}
+	if len(profile.GrantedScopes) != 1 || profile.GrantedScopes[0] != oldScopes {
+		t.Fatalf("profile scopes = %v, want preserved %q", profile.GrantedScopes, oldScopes)
 	}
 }
 
@@ -310,29 +409,117 @@ func TestEnsureCredentialsClipboardWizard(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
+	const targetRef = "google-readwrite/personal"
+	targetPath, sharedPath := separateProfileCredentialPath(t, &d, targetRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	const sharedClient = "existing-shared-client"
+	fs.files[sharedPath] = []byte(sharedClient)
 	d.ClipboardSupported = func() bool { return true }
 	d.ClipboardReadAll = func() (string, error) { return validOAuthJSON, nil }
-	dst, _ := d.GetCredentialsPath()
 	d.Prompter = &stubPrompter{credChoice: "clipboard"}
-	if err := ensureCredentials(d, &initOptions{}, dst); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, targetPath, targetRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
-	if _, err := fs.ReadFile(dst); err != nil {
-		t.Fatalf("dst not written: %v", err)
-	}
+	assertProfileOAuthImport(t, fs, d, targetRef, targetPath, sharedPath, profilePath, sharedClient)
 }
 
 func TestEnsureCredentialsPasteWizard(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
-	dst, _ := d.GetCredentialsPath()
+	const targetRef = "google-readwrite/personal"
+	targetPath, sharedPath := separateProfileCredentialPath(t, &d, targetRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	const sharedClient = "existing-shared-client"
+	fs.files[sharedPath] = []byte(sharedClient)
 	d.Prompter = &stubPrompter{credChoice: "paste", pasteJSON: validOAuthJSON}
-	if err := ensureCredentials(d, &initOptions{}, dst); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, targetPath, targetRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
-	if _, err := fs.ReadFile(dst); err != nil {
-		t.Fatalf("dst not written: %v", err)
+	assertProfileOAuthImport(t, fs, d, targetRef, targetPath, sharedPath, profilePath, sharedClient)
+}
+
+func separateProfileCredentialPath(t *testing.T, d *initDeps, targetRef string) (targetPath, sharedPath string) {
+	t.Helper()
+	var err error
+	sharedPath, err = d.GetCredentialsPath(config.DefaultCredentialRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetPath = filepath.Join(filepath.Dir(sharedPath), "credentials-personal.json")
+	getCredentialsPath := d.GetCredentialsPath
+	d.GetCredentialsPath = func(ref string) (string, error) {
+		if ref == targetRef {
+			return targetPath, nil
+		}
+		return getCredentialsPath(ref)
+	}
+	return targetPath, sharedPath
+}
+
+func assertProfileOAuthImport(t *testing.T, fs *fakeFS, d initDeps, targetRef, targetPath, sharedPath, profilePath, sharedClient string) {
+	t.Helper()
+	got, err := fs.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("profile OAuth client not written: %v", err)
+	}
+	if string(got) != validOAuthJSON {
+		t.Errorf("profile OAuth client content mismatch")
+	}
+	if got := string(fs.files[sharedPath]); got != sharedClient {
+		t.Fatalf("shared OAuth client changed to %q", got)
+	}
+	if _, err := fs.ReadFile(targetPath); !os.IsNotExist(err) {
+		t.Fatalf("selected profile credential path should not be used for imported client JSON, got err=%v", err)
+	}
+	cfg, err := d.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.ProfileOAuth[targetRef].OAuthClientPath; got != profilePath {
+		t.Fatalf("profile OAuth association = %q, want %q", got, profilePath)
+	}
+}
+
+func TestEnsureCredentialsPasteWizardRejectsDifferentClientWhenTokenExists(t *testing.T) {
+	t.Parallel()
+	fs := newFakeFS()
+	d := baseDeps(t, fs)
+	const targetRef = "google-readwrite/personal"
+	targetPath, sharedPath := separateProfileCredentialPath(t, &d, targetRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	const sharedClient = "existing-shared-client"
+	const oldProfileClient = "/existing/profile-client.json"
+	fs.files[sharedPath] = []byte(sharedClient)
+	cfg := &config.Config{CredentialRef: targetRef}
+	cfg.SetProfileOAuth(targetRef, config.ProfileOAuthConfig{OAuthClientPath: oldProfileClient})
+	d.LoadConfig = func() (*config.Config, error) { return cfg, nil }
+	d.HasStoredToken = func() bool { return true }
+	d.GetOAuthConfig = func(ref string) (*oauth2.Config, error) {
+		if ref != targetRef {
+			t.Fatalf("OAuth config requested for %q, want %q", ref, targetRef)
+		}
+		return &oauth2.Config{ClientID: "existing.apps.googleusercontent.com"}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	d.View = view.NewWithWriters(&stdout, &stderr)
+	d.Prompter = &stubPrompter{credChoice: "paste", pasteJSON: validOAuthJSON}
+
+	err := ensureCredentials(d, &initOptions{}, targetPath, targetRef)
+	if err == nil {
+		t.Fatal("expected the wizard to refuse binding a different OAuth client to the stored token")
+	}
+	if !strings.Contains(stdout.String()+stderr.String(), "different client ID") {
+		t.Fatalf("wizard output does not explain the client-ID guard: %q %q", stdout.String(), stderr.String())
+	}
+	if got := cfg.OAuthClientPathForRef(targetRef); got != oldProfileClient {
+		t.Fatalf("profile OAuth path changed to %q, want %q", got, oldProfileClient)
+	}
+	if _, err := fs.ReadFile(profilePath); err == nil {
+		t.Fatal("staged profile OAuth JSON remained after refusing import")
+	}
+	if got := string(fs.files[sharedPath]); got != sharedClient {
+		t.Fatalf("shared OAuth client changed to %q", got)
 	}
 }
 
@@ -346,20 +533,18 @@ func TestEnsureCredentialsFileWizard(t *testing.T) {
 	if err := os.WriteFile(src, []byte(validOAuthJSON), 0644); err != nil {
 		t.Fatal(err)
 	}
-	dst, _ := d.GetCredentialsPath()
+	const targetRef = "google-readwrite/personal"
+	targetPath, sharedPath := separateProfileCredentialPath(t, &d, targetRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	const sharedClient = "existing-shared-client"
+	fs.files[sharedPath] = []byte(sharedClient)
 	d.Prompter = &stubPrompter{credChoice: "file", filePath: src}
 
-	if err := ensureCredentials(d, &initOptions{}, dst); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, targetPath, targetRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
-	got, err := fs.ReadFile(dst)
-	if err != nil {
-		t.Fatalf("dst not written: %v", err)
-	}
-	if string(got) != validOAuthJSON {
-		t.Errorf("dst content mismatch")
-	}
-	if perm := fs.perms[dst]; perm != 0600 {
+	assertProfileOAuthImport(t, fs, d, targetRef, targetPath, sharedPath, profilePath, sharedClient)
+	if perm := fs.perms[profilePath]; perm != 0600 {
 		t.Errorf("expected perms 0600, got %o", perm)
 	}
 }
@@ -368,7 +553,7 @@ func TestEnsureCredentialsShortCircuitsWhenAlreadyPresent(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
-	dst, _ := d.GetCredentialsPath()
+	dst, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
 
 	// Pre-populate credentials.json on real disk so Stat finds it.
 	if err := os.WriteFile(dst, []byte(validOAuthJSON), 0600); err != nil {
@@ -378,7 +563,7 @@ func TestEnsureCredentialsShortCircuitsWhenAlreadyPresent(t *testing.T) {
 
 	stub := &stubPrompter{}
 	d.Prompter = stub
-	if err := ensureCredentials(d, &initOptions{}, dst); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, dst, config.DefaultCredentialRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
 	// SelectCredSource (the wizard's first prompt) must NOT have fired.
@@ -397,10 +582,10 @@ func TestEnsureCredentialsAudienceAdminSkipsDIYSteps(t *testing.T) {
 	d := baseDeps(t, fs)
 	out := &bytes.Buffer{}
 	d.View = view.NewWithWriters(out, &bytes.Buffer{})
-	dst, _ := d.GetCredentialsPath()
+	dst, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
 	d.Prompter = &stubPrompter{audience: "admin", credChoice: "paste", pasteJSON: validOAuthJSON}
 
-	if err := ensureCredentials(d, &initOptions{}, dst); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, dst, config.DefaultCredentialRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
 	got := out.String()
@@ -412,24 +597,29 @@ func TestEnsureCredentialsAudienceAdminSkipsDIYSteps(t *testing.T) {
 	}
 }
 
-func TestEnsureCredentialsAudienceDIYShowsDIYStepsAndAdminPointer(t *testing.T) {
+func TestEnsureCredentialsAudienceDIYShowsPersonalOAuthGuidance(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
 	out := &bytes.Buffer{}
 	d.View = view.NewWithWriters(out, &bytes.Buffer{})
-	dst, _ := d.GetCredentialsPath()
+	dst, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
 	d.Prompter = &stubPrompter{audience: "diy", credChoice: "paste", pasteJSON: validOAuthJSON}
 
-	if err := ensureCredentials(d, &initOptions{}, dst); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, dst, config.DefaultCredentialRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
 	got := out.String()
 	if !strings.Contains(got, "Enable APIs: Gmail") {
 		t.Errorf("diy audience should show DIY steps; output:\n%s", got)
 	}
-	if !strings.Contains(got, "https://github.com/open-cli-collective/google-readonly/blob/main/WORKSPACE_ADMINS.md") {
-		t.Errorf("diy audience should show the fully-qualified Workspace admin doc URL (so Homebrew/Choco users can reach it); output:\n%s", got)
+	if !strings.Contains(got, "Choose External") ||
+		!strings.Contains(got, "refresh tokens expire after 7 days in Testing") ||
+		!strings.Contains(got, "verification exemption") {
+		t.Errorf("diy audience should explain the personal External/testing setup; output:\n%s", got)
+	}
+	if !strings.Contains(got, "https://github.com/open-cli-collective/google-cli/blob/main/WORKSPACE_ADMINS.md") {
+		t.Errorf("diy audience should show the fully-qualified OAuth setup guide URL; output:\n%s", got)
 	}
 }
 
@@ -452,11 +642,11 @@ func TestEnsureCredentialsAudienceIsAskedOncePerWizard(t *testing.T) {
 		idx++
 		return s, nil
 	}
-	dst, _ := d.GetCredentialsPath()
+	dst, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
 	stub := &stubPrompter{audience: "admin", credChoice: "clipboard"}
 	d.Prompter = stub
 
-	if err := ensureCredentials(d, &initOptions{}, dst); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, dst, config.DefaultCredentialRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
 	gotAudience, gotSelect := 0, 0
@@ -480,12 +670,18 @@ func TestEnsureCredentialsTightensPermsOnOverwrite(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
-	dst, _ := d.GetCredentialsPath()
-	// Pre-existing 0644 file.
-	if err := os.WriteFile(dst, []byte("old"), 0644); err != nil {
+	dst, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	// Pre-existing shared and profile files; neither may be left more
+	// permissive when the imported JSON is written.
+	if err := os.WriteFile(dst, []byte("shared-old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(profilePath, []byte("old"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(dst)
+	defer os.Remove(profilePath)
 
 	srcDir := t.TempDir()
 	src := filepath.Join(srcDir, "downloaded.json")
@@ -498,15 +694,22 @@ func TestEnsureCredentialsTightensPermsOnOverwrite(t *testing.T) {
 	d.Chmod = os.Chmod
 	d.ReadFile = os.ReadFile
 	d.Prompter = &stubPrompter{}
-	if err := ensureCredentials(d, &initOptions{credentialsFile: src}, dst); err != nil {
+	if err := ensureCredentials(d, &initOptions{credentialsFile: src}, dst, config.DefaultCredentialRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
-	info, err := os.Stat(dst)
+	info, err := os.Stat(profilePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if info.Mode().Perm() != 0600 {
 		t.Errorf("expected 0600 after overwrite, got %o", info.Mode().Perm())
+	}
+	shared, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(shared) != "shared-old" {
+		t.Fatalf("shared client changed to %q", shared)
 	}
 }
 
@@ -540,6 +743,55 @@ func TestRunWithFreshSetupSavesScopesNoTTLPrompt(t *testing.T) {
 	}
 	if len(cfgSeen) < 1 {
 		t.Fatalf("expected at least one config save (scopes), got %d", len(cfgSeen))
+	}
+	last := cfgSeen[len(cfgSeen)-1]
+	gotScopes, wantScopes := last.GrantedScopesForRef(config.DefaultCredentialRef), config.Scopes()
+	if len(gotScopes) != len(wantScopes) {
+		t.Errorf("profile granted_scopes = %v, want %v", gotScopes, wantScopes)
+	} else {
+		for i := range wantScopes {
+			if gotScopes[i] != wantScopes[i] {
+				t.Errorf("profile granted_scopes = %v, want %v", gotScopes, wantScopes)
+				break
+			}
+		}
+	}
+	if len(last.GrantedScopes) != 0 {
+		t.Errorf("legacy global granted_scopes = %v, want no cross-profile claim", last.GrantedScopes)
+	}
+}
+
+func TestRunWithConfigLoadFailureDoesNotReplaceProfileBindingsAfterTokenSave(t *testing.T) {
+	t.Parallel()
+	fs := newFakeFS()
+	d := baseDeps(t, fs)
+	credPath, err := d.GetCredentialsPath(config.DefaultCredentialRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credPath, []byte(validOAuthJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	d.View = view.NewWithWriters(&out, &errOut)
+	d.LoadConfig = func() (*config.Config, error) { return nil, errors.New("config unavailable") }
+	tokenSaved := false
+	d.SetToken = func(*oauth2.Token) error { tokenSaved = true; return nil }
+	saveCalls := 0
+	d.SaveConfig = func(*config.Config) error { saveCalls++; return nil }
+	d.Prompter = &stubPrompter{redirectURL: "http://localhost/?code=AUTH-CODE"}
+
+	if err := runWith(context.Background(), d, &initOptions{noVerify: true}); err != nil {
+		t.Fatalf("runWith after successful token exchange: %v", err)
+	}
+	if !tokenSaved {
+		t.Fatal("expected the exchanged token to be saved")
+	}
+	if saveCalls != 0 {
+		t.Fatalf("SaveConfig called %d times after config load failed; want no save", saveCalls)
+	}
+	if !strings.Contains(errOut.String(), "granted scopes could not be recorded") {
+		t.Fatalf("stderr warning = %q, want scope-metadata warning", errOut.String())
 	}
 }
 
@@ -728,7 +980,7 @@ func TestRunWithRecordedStaleScopesReauths(t *testing.T) {
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
 
-	credPath, _ := d.GetCredentialsPath()
+	credPath, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
 	if err := os.WriteFile(credPath, []byte(validOAuthJSON), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -789,7 +1041,7 @@ func TestRunWithExistingTokenStaleScopeReauths(t *testing.T) {
 	d := baseDeps(t, fs)
 
 	// Pre-populate credentials.json so we don't enter the wizard.
-	credPath, _ := d.GetCredentialsPath()
+	credPath, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
 	if err := os.WriteFile(credPath, []byte(validOAuthJSON), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -834,7 +1086,7 @@ func TestRunWithExistingTokenNoVerifyStillCatchesStaleScopes(t *testing.T) {
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
 
-	credPath, _ := d.GetCredentialsPath()
+	credPath, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
 	if err := os.WriteFile(credPath, []byte(validOAuthJSON), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -867,7 +1119,7 @@ func TestRunWithExistingTokenNoVerifySkipsAPI(t *testing.T) {
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
 
-	credPath, _ := d.GetCredentialsPath()
+	credPath, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
 	if err := os.WriteFile(credPath, []byte(validOAuthJSON), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -1043,39 +1295,6 @@ func TestRunWith_EnsureMigratedRunsFirst(t *testing.T) {
 
 // ---- target announcement, --profile, identity recording -------------------
 
-func TestApplyProfileFlag(t *testing.T) {
-	// Not Parallel: mutates the package-global credential-ref override.
-	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
-
-	t.Run("valid name routes the run at service/name", func(t *testing.T) {
-		keychain.SetCredentialRefOverride("", false)
-		ref, err := applyProfileFlag("work")
-		if err != nil {
-			t.Fatalf("applyProfileFlag: %v", err)
-		}
-		if ref != "google-readonly/work" {
-			t.Errorf("ref = %q, want google-readonly/work", ref)
-		}
-		if v, set := keychain.GetCredentialRefOverride(); !set || v != "google-readonly/work" {
-			t.Errorf("override = (%q,%v), want (google-readonly/work,true)", v, set)
-		}
-	})
-
-	t.Run("invalid characters rejected", func(t *testing.T) {
-		keychain.SetCredentialRefOverride("", false)
-		if _, err := applyProfileFlag("user@example.com"); err == nil {
-			t.Fatal("expected error for '@' in profile name")
-		}
-	})
-
-	t.Run("conflict with --ref rejected", func(t *testing.T) {
-		keychain.SetCredentialRefOverride("google-readonly/other", true)
-		if _, err := applyProfileFlag("work"); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-			t.Fatalf("expected mutual-exclusion error, got %v", err)
-		}
-	})
-}
-
 // TestRunWithAnnouncesTarget pins the up-front naming: which profile this
 // run touches, where it was selected, and which account it currently holds —
 // BEFORE any prompt or write.
@@ -1104,7 +1323,7 @@ func TestRunWithAnnouncesTarget(t *testing.T) {
 	for _, want := range []string{
 		"Setting up profile: google-readonly/default (via config.yml credential_ref)",
 		"Currently holds:    ada@example.com",
-		"init --profile <name>",
+		"--profile <name> init",
 		"Token for google-readonly/default saved to test",
 	} {
 		if !strings.Contains(got, want) {
@@ -1209,6 +1428,14 @@ func TestRunWithProfileFlagGuidance(t *testing.T) {
 	d := baseDeps(t, fs)
 	out := &bytes.Buffer{}
 	d.View = view.NewWithWriters(out, out)
+	clientPath := filepath.Join(t.TempDir(), "client.json")
+	saved := &config.Config{
+		CredentialRef:   "google-readonly/default",
+		OAuthClientPath: clientPath,
+		Keyring:         config.KeyringConfig{Backend: "file"},
+	}
+	d.LoadConfig = func() (*config.Config, error) { return saved, nil }
+	d.SaveConfig = func(c *config.Config) error { *saved = *c; return nil }
 	d.DescribeTarget = func() (string, string, string) {
 		return "google-readonly/work", "--ref flag", ""
 	}
@@ -1228,10 +1455,19 @@ func TestRunWithProfileFlagGuidance(t *testing.T) {
 		"Setting up profile: google-readonly/work (via --profile flag)",
 		"authenticated but not active",
 		"profiles use work",
-		"--ref google-readonly/work",
+		"--profile work <command>",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}
+	}
+	if saved.CredentialRef != "google-readonly/default" {
+		t.Errorf("saved credential_ref after named init = %q, want google-readonly/default", saved.CredentialRef)
+	}
+	if saved.OAuthClientPath != clientPath {
+		t.Errorf("saved oauth_client_path after named init = %q, want unchanged path", saved.OAuthClientPath)
+	}
+	if saved.Keyring.Backend != "file" {
+		t.Errorf("saved keyring backend after named init = %q, want file", saved.Keyring.Backend)
 	}
 }

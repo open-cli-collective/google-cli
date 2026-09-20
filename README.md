@@ -67,7 +67,44 @@ grw contacts create --given-name Test --email t@example.com --dry-run
 grw drive trash --query "name contains 'old'" --dry-run
 ```
 
-One desktop OAuth client can be used by both tools, but each tool asks for consent and stores its token under its own identity. Google Workspace administrators should start with [`WORKSPACE_ADMINS.md`](WORKSPACE_ADMINS.md).
+One desktop OAuth client can be imported into profiles in both tools, but each CLI asks for consent and stores its token separately. See [OAuth setup](WORKSPACE_ADMINS.md) for personal External/testing and organization Internal guidance, including profile-specific client imports.
+
+## Profiles
+
+Each tool has its own profile namespace. Use a bare profile name with the global
+`--profile` shorthand, or pass the full credential reference with `--ref`:
+
+```bash
+gro --profile work mail list
+grw --profile work calendar today
+gro --ref google-readonly/work mail list
+```
+
+The selector precedence is explicit flag (`--profile` or `--ref`), credential
+reference environment variable, saved `credential_ref`, then the built-in
+`default` profile. For environment selection, use
+`GOOGLE_READONLY_CREDENTIAL_REF` with `gro` or
+`GOOGLE_READWRITE_CREDENTIAL_REF` with `grw`, for example:
+
+```bash
+GOOGLE_READONLY_CREDENTIAL_REF=google-readonly/work gro mail list
+```
+
+`--profile` and `--ref` cannot be used together. To add an account without
+changing the active profile, run `gro --profile work init` (or the equivalent
+`grw` command). Inspect and manage profiles with:
+
+```bash
+gro profiles list
+gro profiles rename old-name new-name
+```
+
+Renaming moves the stored credentials without re-authentication, updates the
+saved active profile when necessary, and refuses a destination that already
+has credentials. If saving the active-profile update fails, the copied
+destination is removed when rollback succeeds while the source remains, so the
+command can be retried. If rollback also fails, the command reports that the
+destination may remain.
 
 ## Documentation
 
