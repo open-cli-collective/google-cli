@@ -409,29 +409,117 @@ func TestEnsureCredentialsClipboardWizard(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
+	const targetRef = "google-readwrite/personal"
+	targetPath, sharedPath := separateProfileCredentialPath(t, &d, targetRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	const sharedClient = "existing-shared-client"
+	fs.files[sharedPath] = []byte(sharedClient)
 	d.ClipboardSupported = func() bool { return true }
 	d.ClipboardReadAll = func() (string, error) { return validOAuthJSON, nil }
-	dst, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
 	d.Prompter = &stubPrompter{credChoice: "clipboard"}
-	if err := ensureCredentials(d, &initOptions{}, dst, config.DefaultCredentialRef); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, targetPath, targetRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
-	if _, err := fs.ReadFile(dst); err != nil {
-		t.Fatalf("dst not written: %v", err)
-	}
+	assertProfileOAuthImport(t, fs, d, targetRef, targetPath, sharedPath, profilePath, sharedClient)
 }
 
 func TestEnsureCredentialsPasteWizard(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
-	dst, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
+	const targetRef = "google-readwrite/personal"
+	targetPath, sharedPath := separateProfileCredentialPath(t, &d, targetRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	const sharedClient = "existing-shared-client"
+	fs.files[sharedPath] = []byte(sharedClient)
 	d.Prompter = &stubPrompter{credChoice: "paste", pasteJSON: validOAuthJSON}
-	if err := ensureCredentials(d, &initOptions{}, dst, config.DefaultCredentialRef); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, targetPath, targetRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
-	if _, err := fs.ReadFile(dst); err != nil {
-		t.Fatalf("dst not written: %v", err)
+	assertProfileOAuthImport(t, fs, d, targetRef, targetPath, sharedPath, profilePath, sharedClient)
+}
+
+func separateProfileCredentialPath(t *testing.T, d *initDeps, targetRef string) (targetPath, sharedPath string) {
+	t.Helper()
+	var err error
+	sharedPath, err = d.GetCredentialsPath(config.DefaultCredentialRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetPath = filepath.Join(filepath.Dir(sharedPath), "credentials-personal.json")
+	getCredentialsPath := d.GetCredentialsPath
+	d.GetCredentialsPath = func(ref string) (string, error) {
+		if ref == targetRef {
+			return targetPath, nil
+		}
+		return getCredentialsPath(ref)
+	}
+	return targetPath, sharedPath
+}
+
+func assertProfileOAuthImport(t *testing.T, fs *fakeFS, d initDeps, targetRef, targetPath, sharedPath, profilePath, sharedClient string) {
+	t.Helper()
+	got, err := fs.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("profile OAuth client not written: %v", err)
+	}
+	if string(got) != validOAuthJSON {
+		t.Errorf("profile OAuth client content mismatch")
+	}
+	if got := string(fs.files[sharedPath]); got != sharedClient {
+		t.Fatalf("shared OAuth client changed to %q", got)
+	}
+	if _, err := fs.ReadFile(targetPath); !os.IsNotExist(err) {
+		t.Fatalf("selected profile credential path should not be used for imported client JSON, got err=%v", err)
+	}
+	cfg, err := d.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.ProfileOAuth[targetRef].OAuthClientPath; got != profilePath {
+		t.Fatalf("profile OAuth association = %q, want %q", got, profilePath)
+	}
+}
+
+func TestEnsureCredentialsPasteWizardRejectsDifferentClientWhenTokenExists(t *testing.T) {
+	t.Parallel()
+	fs := newFakeFS()
+	d := baseDeps(t, fs)
+	const targetRef = "google-readwrite/personal"
+	targetPath, sharedPath := separateProfileCredentialPath(t, &d, targetRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	const sharedClient = "existing-shared-client"
+	const oldProfileClient = "/existing/profile-client.json"
+	fs.files[sharedPath] = []byte(sharedClient)
+	cfg := &config.Config{CredentialRef: targetRef}
+	cfg.SetProfileOAuth(targetRef, config.ProfileOAuthConfig{OAuthClientPath: oldProfileClient})
+	d.LoadConfig = func() (*config.Config, error) { return cfg, nil }
+	d.HasStoredToken = func() bool { return true }
+	d.GetOAuthConfig = func(ref string) (*oauth2.Config, error) {
+		if ref != targetRef {
+			t.Fatalf("OAuth config requested for %q, want %q", ref, targetRef)
+		}
+		return &oauth2.Config{ClientID: "existing.apps.googleusercontent.com"}, nil
+	}
+	var stdout, stderr bytes.Buffer
+	d.View = view.NewWithWriters(&stdout, &stderr)
+	d.Prompter = &stubPrompter{credChoice: "paste", pasteJSON: validOAuthJSON}
+
+	err := ensureCredentials(d, &initOptions{}, targetPath, targetRef)
+	if err == nil {
+		t.Fatal("expected the wizard to refuse binding a different OAuth client to the stored token")
+	}
+	if !strings.Contains(stdout.String()+stderr.String(), "different client ID") {
+		t.Fatalf("wizard output does not explain the client-ID guard: %q %q", stdout.String(), stderr.String())
+	}
+	if got := cfg.OAuthClientPathForRef(targetRef); got != oldProfileClient {
+		t.Fatalf("profile OAuth path changed to %q, want %q", got, oldProfileClient)
+	}
+	if _, err := fs.ReadFile(profilePath); err == nil {
+		t.Fatal("staged profile OAuth JSON remained after refusing import")
+	}
+	if got := string(fs.files[sharedPath]); got != sharedClient {
+		t.Fatalf("shared OAuth client changed to %q", got)
 	}
 }
 
@@ -445,20 +533,18 @@ func TestEnsureCredentialsFileWizard(t *testing.T) {
 	if err := os.WriteFile(src, []byte(validOAuthJSON), 0644); err != nil {
 		t.Fatal(err)
 	}
-	dst, _ := d.GetCredentialsPath(config.DefaultCredentialRef)
+	const targetRef = "google-readwrite/personal"
+	targetPath, sharedPath := separateProfileCredentialPath(t, &d, targetRef)
+	profilePath, _ := d.NewProfileOAuthClientPath()
+	const sharedClient = "existing-shared-client"
+	fs.files[sharedPath] = []byte(sharedClient)
 	d.Prompter = &stubPrompter{credChoice: "file", filePath: src}
 
-	if err := ensureCredentials(d, &initOptions{}, dst, config.DefaultCredentialRef); err != nil {
+	if err := ensureCredentials(d, &initOptions{}, targetPath, targetRef); err != nil {
 		t.Fatalf("ensureCredentials: %v", err)
 	}
-	got, err := fs.ReadFile(dst)
-	if err != nil {
-		t.Fatalf("dst not written: %v", err)
-	}
-	if string(got) != validOAuthJSON {
-		t.Errorf("dst content mismatch")
-	}
-	if perm := fs.perms[dst]; perm != 0600 {
+	assertProfileOAuthImport(t, fs, d, targetRef, targetPath, sharedPath, profilePath, sharedClient)
+	if perm := fs.perms[profilePath]; perm != 0600 {
 		t.Errorf("expected perms 0600, got %o", perm)
 	}
 }

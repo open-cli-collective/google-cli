@@ -751,8 +751,8 @@ func finishExisting(d initDeps, profile *people.Profile) error {
 	return nil
 }
 
-// ensureCredentials makes sure credentials.json exists at credPath, populating
-// it from --credentials-file or the interactive wizard if needed.
+// ensureCredentials makes sure an OAuth client exists for targetRef, importing
+// user-supplied JSON into a profile-managed file when needed.
 func ensureCredentials(d initDeps, opts *initOptions, credPath, targetRef string) error {
 	// --credentials-file flag wins.
 	if opts.credentialsFile != "" {
@@ -774,7 +774,7 @@ func ensureCredentials(d initDeps, opts *initOptions, credPath, targetRef string
 	if d.DiscoverSiblingClientJSON != nil {
 		if srcPath, sibling, ok := d.DiscoverSiblingClientJSON(); ok {
 			d.View.Info("Reusing the OAuth client from %s - no need to paste it again.", sibling)
-			return importFromFile(d, srcPath, credPath)
+			return importProfileFromFile(d, srcPath, targetRef)
 		}
 	}
 
@@ -853,11 +853,10 @@ func ensureCredentials(d initDeps, opts *initOptions, credPath, targetRef string
 			return fmt.Errorf("unknown choice: %s", choice)
 		}
 
-		if err := writeCredentials(d, credPath, blob); err != nil {
+		if err := importProfileJSON(d, blob, targetRef); err != nil {
 			d.View.Error("%v", err)
 			continue
 		}
-		d.View.Success("Credentials saved to %s", credPath)
 		return nil
 	}
 	return errors.New("could not obtain valid credentials.json after 3 attempts")
@@ -871,6 +870,10 @@ func importProfileFromFile(d initDeps, srcPath, targetRef string) error {
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", srcPath, err)
 	}
+	return importProfileJSON(d, blob, targetRef)
+}
+
+func importProfileJSON(d initDeps, blob []byte, targetRef string) error {
 	imported, err := google.ConfigFromJSON(blob, config.Scopes()...)
 	if err != nil {
 		return fmt.Errorf("invalid OAuth client JSON: %w", err)
@@ -947,15 +950,6 @@ func removeProfileOAuthClientFile(d initDeps, path string) error {
 		return d.RemoveFile(path)
 	}
 	return os.Remove(path)
-}
-
-// importFromFile reads, validates, and writes credentials.json from a path.
-func importFromFile(d initDeps, srcPath, dstPath string) error {
-	blob, err := d.ReadFile(srcPath)
-	if err != nil {
-		return fmt.Errorf("reading %s: %w", srcPath, err)
-	}
-	return writeCredentials(d, dstPath, blob)
 }
 
 // writeCredentials validates blob as OAuth client JSON and writes it to dst at
