@@ -10,57 +10,47 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/rootutil"
 )
 
-// TestWireCredentialRefSelection_FlagSet proves a --ref on a real command
-// path is recorded in the override the keychain.open resolver reads.
 func TestWireCredentialRefSelection_FlagSet(t *testing.T) {
 	resetState(t)
 	t.Setenv(keychain.CredentialRefEnvVar(), "")
 
-	probe := newProbeCmd("probe-ref-flagset")
+	probe := newProbeCmd("probe-profile-flagset")
 	rootCmd.AddCommand(probe)
 	defer removeChild(t, probe)
-	rootCmd.SetArgs([]string{"probe-ref-flagset", "--ref", "google-readonly/acct-a"})
+	rootCmd.SetArgs([]string{"probe-profile-flagset", "--profile", "acct-a"})
 
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	v, set := keychain.GetCredentialRefOverride()
-	if !set {
-		t.Fatalf("override flagSet = false, want true")
-	}
-	if v != "google-readonly/acct-a" {
-		t.Errorf("override value = %q, want %q", v, "google-readonly/acct-a")
+	if !set || v != "google-readonly/acct-a" {
+		t.Errorf("override = (%q, %v), want (google-readonly/acct-a, true)", v, set)
 	}
 }
 
-// TestWireCredentialRefSelection_FlagInvalid asserts a malformed --ref fails
-// up front with a clear "--ref" error, before any keyring work.
 func TestWireCredentialRefSelection_FlagInvalid(t *testing.T) {
 	resetState(t)
 
-	probe := newProbeCmd("probe-ref-invalid")
+	probe := newProbeCmd("probe-profile-invalid")
 	rootCmd.AddCommand(probe)
 	defer removeChild(t, probe)
-	rootCmd.SetArgs([]string{"probe-ref-invalid", "--ref", "no-slash"})
+	rootCmd.SetArgs([]string{"probe-profile-invalid", "--profile", "bad.profile"})
 
 	err := rootCmd.Execute()
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "--"+rootutil.CredentialRefFlagName) {
-		t.Errorf("error should mention --%s: %v", rootutil.CredentialRefFlagName, err)
+	if !strings.Contains(err.Error(), "--"+rootutil.ProfileFlagName) {
+		t.Errorf("error should mention --%s: %v", rootutil.ProfileFlagName, err)
 	}
 }
 
-// TestWireCredentialRefSelection_ShadowingSubcommand regresses the
-// cobra-doesn't-chain-PersistentPreRunE bug for --ref, mirroring the
-// --backend guard.
 func TestWireCredentialRefSelection_ShadowingSubcommand(t *testing.T) {
 	resetState(t)
 	t.Setenv(keychain.CredentialRefEnvVar(), "")
 
 	shadow := &cobra.Command{
-		Use: "shadow-ref",
+		Use: "shadow-profile",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return WireCredentialRefSelection(cmd)
 		},
@@ -70,26 +60,20 @@ func TestWireCredentialRefSelection_ShadowingSubcommand(t *testing.T) {
 	rootCmd.AddCommand(shadow)
 	defer removeChild(t, shadow)
 
-	rootCmd.SetArgs([]string{"shadow-ref", "leaf", "--ref", "google-readonly/acct-b"})
+	rootCmd.SetArgs([]string{"shadow-profile", "leaf", "--profile", "acct-b"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("Execute through shadowing PreRunE: %v", err)
 	}
 	v, set := keychain.GetCredentialRefOverride()
 	if !set || v != "google-readonly/acct-b" {
-		t.Errorf("override = (%q, %v); want (\"google-readonly/acct-b\", true) — shadower's PreRunE failed to invoke WireCredentialRefSelection", v, set)
+		t.Errorf("override = (%q, %v); want (google-readonly/acct-b, true)", v, set)
 	}
 }
 
-// TestCredentialRef_SetCredentialShadowsPersistent documents the intentional
-// exception to the inherit-everywhere rule: `set-credential` keeps its own
-// local --ref (the write target), so it must resolve to a DIFFERENT *pflag.Flag
-// than the root's persistent selector — while a read command inherits the
-// canonical persistent one. A regression that dropped set-credential's local
-// flag (or that made a read command shadow --ref) would flip these.
-func TestCredentialRef_SetCredentialShadowsPersistent(t *testing.T) {
-	canonical := rootCmd.PersistentFlags().Lookup(rootutil.CredentialRefFlagName)
+func TestProfile_SetCredentialInheritsPersistent(t *testing.T) {
+	canonical := rootCmd.PersistentFlags().Lookup(rootutil.ProfileFlagName)
 	if canonical == nil {
-		t.Fatalf("root persistent flag --%s not registered", rootutil.CredentialRefFlagName)
+		t.Fatalf("root persistent flag --%s not registered", rootutil.ProfileFlagName)
 	}
 
 	var sc *cobra.Command
@@ -102,17 +86,40 @@ func TestCredentialRef_SetCredentialShadowsPersistent(t *testing.T) {
 	if sc == nil {
 		t.Fatal("set-credential command not registered on rootCmd")
 	}
-	if got := sc.Flag(rootutil.CredentialRefFlagName); got == nil {
-		t.Fatalf("set-credential has no --%s", rootutil.CredentialRefFlagName)
-	} else if got == canonical {
-		t.Errorf("set-credential --%s resolved to the persistent flag; expected its own local shadow", rootutil.CredentialRefFlagName)
+	if got := sc.Flag(rootutil.ProfileFlagName); got != canonical {
+		t.Errorf("set-credential --%s = %p, want canonical %p", rootutil.ProfileFlagName, got, canonical)
+	}
+	for _, name := range []string{"init", "me"} {
+		var command *cobra.Command
+		for _, c := range rootCmd.Commands() {
+			if c.Name() == name {
+				command = c
+				break
+			}
+		}
+		if command == nil {
+			t.Fatalf("%s command not registered on rootCmd", name)
+		}
+		if got := command.Flag(rootutil.ProfileFlagName); got != canonical {
+			t.Errorf("%s --%s = %p, want canonical %p", name, rootutil.ProfileFlagName, got, canonical)
+		}
 	}
 
-	// A read command (no local --ref) must inherit the canonical persistent flag.
-	me := newProbeCmd("probe-ref-inherit")
+	me := newProbeCmd("probe-profile-inherit")
 	rootCmd.AddCommand(me)
 	defer removeChild(t, me)
-	if got := me.Flag(rootutil.CredentialRefFlagName); got != canonical {
-		t.Errorf("read command --%s = %p, want canonical %p (unexpected shadow)", rootutil.CredentialRefFlagName, got, canonical)
+	if got := me.Flag(rootutil.ProfileFlagName); got != canonical {
+		t.Errorf("read command --%s = %p, want canonical %p", rootutil.ProfileFlagName, got, canonical)
+	}
+}
+
+func TestPublicRefFlagIsUnknown(t *testing.T) {
+	resetState(t)
+	probe := newProbeCmd("probe-ref-unknown")
+	rootCmd.AddCommand(probe)
+	defer removeChild(t, probe)
+	rootCmd.SetArgs([]string{"probe-ref-unknown", "--ref", "google-readonly/acct-a"})
+	if err := rootCmd.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("--ref should be unknown, got %v", err)
 	}
 }

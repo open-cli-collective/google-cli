@@ -10,6 +10,7 @@ import (
 	cccredstore "github.com/open-cli-collective/cli-common/credstore"
 
 	"github.com/open-cli-collective/google-cli/internal/keychain"
+	"github.com/open-cli-collective/google-cli/internal/rootutil"
 )
 
 const serviceName = "google-readonly"
@@ -26,14 +27,26 @@ func resetState(t *testing.T) {
 	t.Helper()
 	keychain.SetBackendFlagOverride("", false)
 	keychain.SetCredentialRefOverride("", false)
+	resetRootFlag(t, cccredstore.BackendFlagName)
+	resetRootFlag(t, rootutil.ProfileFlagName)
 	// rootCmd.SetArgs mutates package-level state; if a test panics before
 	// the next test calls SetArgs, a stale slice could bleed in (notably
 	// under `go test -shuffle=on`). Clear it on cleanup.
 	t.Cleanup(func() {
 		keychain.SetBackendFlagOverride("", false)
 		keychain.SetCredentialRefOverride("", false)
+		resetRootFlag(t, cccredstore.BackendFlagName)
+		resetRootFlag(t, rootutil.ProfileFlagName)
 		rootCmd.SetArgs(nil)
 	})
+}
+
+func resetRootFlag(t *testing.T, name string) {
+	t.Helper()
+	if f := rootCmd.PersistentFlags().Lookup(name); f != nil {
+		_ = f.Value.Set(f.DefValue)
+		f.Changed = false
+	}
 }
 
 // newProbeCmd returns a no-op subcommand used to exercise the root's

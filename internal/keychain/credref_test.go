@@ -6,7 +6,7 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/config"
 )
 
-// resetCredRefOverride keeps the package-level --ref override clean across
+// resetCredRefOverride keeps the package-level --profile override clean across
 // tests so a leaked value can't tilt the next.
 func resetCredRefOverride(t *testing.T) {
 	t.Helper()
@@ -22,7 +22,7 @@ func TestCredentialRefEnvVar(t *testing.T) {
 	}
 }
 
-// TestEffectiveRef_Precedence proves --ref flag > env > config, and that an
+// TestEffectiveRef_Precedence proves --profile flag > env > config, and that an
 // override is reported (so the caller suppresses the one-time migration).
 func TestEffectiveRef_Precedence(t *testing.T) {
 	const cfgRef = "google-readonly/cfg"
@@ -61,7 +61,7 @@ func TestEffectiveRef_Precedence(t *testing.T) {
 		SetCredentialRefOverride("", true) // Changed=true but no value
 		ref, _, ov := effectiveRef(cfgRef)
 		if ref != cfgRef || ov {
-			t.Errorf("got (%q,%v), want (%q,false) — empty --ref must fall through", ref, ov, cfgRef)
+			t.Errorf("got (%q,%v), want (%q,false) — empty --profile must fall through", ref, ov, cfgRef)
 		}
 	})
 }
@@ -69,7 +69,7 @@ func TestEffectiveRef_Precedence(t *testing.T) {
 // TestApplyCredentialRefOverride proves the safety-critical part open() relies
 // on: a present override swaps cfg.CredentialRef AND forces runMigration=false
 // (so the one-time legacy migration never runs against an arbitrary
-// --ref/env-selected profile), while no override leaves both untouched. This is
+// --profile/env-selected profile), while no override leaves both untouched. This is
 // the open()-side coverage the pure effectiveRef/wiring tests don't provide.
 func TestApplyCredentialRefOverride(t *testing.T) {
 	const cfgRef = "google-readonly/cfg"
@@ -129,7 +129,7 @@ func TestDescribeRefSource(t *testing.T) {
 		src  config.RefSource
 		want string
 	}{
-		{config.RefSourceFlag, "--ref flag"},
+		{config.RefSourceFlag, "--profile flag"},
 		{config.RefSourceEnv, "GOOGLE_READONLY_CREDENTIAL_REF environment variable"},
 		{config.RefSourceConfig, "config.yml credential_ref"},
 		{config.RefSourceDefault, "built-in default; config.yml sets no credential_ref"},

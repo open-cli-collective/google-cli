@@ -78,9 +78,9 @@ func open(overwrite, runMigration bool) (*Store, error) {
 	return openWith(cfg, overwrite, runMigration)
 }
 
-// applyCredentialRefOverride applies the per-invocation credential-ref override
+// applyCredentialRefOverride applies the per-invocation profile override
 // to cfg in place and returns the effective runMigration decision. A
-// --ref flag or <SERVICE>_CREDENTIAL_REF env (precedence: flag > env > config)
+// --profile flag or <SERVICE>_CREDENTIAL_REF env (precedence: flag > env > config)
 // selects the ref for this process, so concurrent processes can each target a
 // different account without racing on the shared config.yml. A present override
 // also FORCES runMigration=false: the one-time §1.8 migration only ever targets
@@ -103,7 +103,7 @@ func applyCredentialRefOverride(cfg *config.Config, runMigration bool) bool {
 // (e.g. "GOOGLE_READONLY_CREDENTIAL_REF"). It is derived from gro's service so
 // it always tracks the same <SERVICE>_ prefix credstore uses for the backend
 // env var, and is never hard-coded (§1.3). Exported so the cobra layer can name
-// it in the --ref flag's help text.
+// it in the --profile flag's help text.
 func CredentialRefEnvVar() string {
 	service, _, err := credstore.ParseRef(config.DefaultCredentialRef)
 	if err != nil {
@@ -114,7 +114,7 @@ func CredentialRefEnvVar() string {
 }
 
 // effectiveRef applies the per-invocation credential-ref precedence
-// (--ref flag > <SERVICE>_CREDENTIAL_REF env > config credential_ref) and
+// (--profile flag > <SERVICE>_CREDENTIAL_REF env > config credential_ref) and
 // reports whether an explicit override was supplied, plus which source won
 // (for error attribution). Mirrors the --backend precedence chain. When
 // overridden is true, the caller must skip the one-time §1.8 migration (see
@@ -130,10 +130,10 @@ func effectiveRef(configRef string) (ref string, source config.RefSource, overri
 }
 
 // OpenRef opens a store against an explicit ref instead of config.yml's
-// credential_ref — used by `gro set-credential --ref` and the refresh
+// credential_ref — used by the refresh
 // persister. An empty ref falls back to the configured/default ref.
 // Migration does NOT run here: the one-time §1.8 migration only ever targets
-// the canonical configured ref (running it against an arbitrary --ref would
+// the canonical configured ref (running it against an arbitrary --profile would
 // discover the default ref's legacy data and could write it under the wrong
 // service/profile).
 func OpenRef(ref string) (*Store, error) {
@@ -216,7 +216,7 @@ func (s *Store) RefSource() config.RefSource { return s.refSource }
 func DescribeRefSource(s config.RefSource) string {
 	switch s {
 	case config.RefSourceFlag:
-		return "--ref flag"
+		return "--profile flag"
 	case config.RefSourceEnv:
 		return CredentialRefEnvVar() + " environment variable"
 	case config.RefSourceConfig:

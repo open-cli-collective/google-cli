@@ -91,8 +91,8 @@ type Config struct {
 type RefSource string
 
 // RefSource values, in precedence order (flag > env > config > default).
-// RefSourceExplicit marks a caller-supplied ref (set-credential --ref, the
-// refresh persister) that bypassed the precedence chain.
+// RefSourceExplicit marks a caller-supplied ref (the refresh persister) that
+// bypassed the precedence chain.
 const (
 	RefSourceFlag     RefSource = "flag"
 	RefSourceEnv      RefSource = "env"

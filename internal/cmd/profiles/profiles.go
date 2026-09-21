@@ -38,7 +38,7 @@ func NewCommand() *cobra.Command {
 		Long: `Manage the credential profiles stored in the OS keyring.
 
 A profile holds one Google account's OAuth token. The active profile is the
-credential_ref in config.yml (overridable per invocation with --ref or the
+credential_ref in config.yml (overridable per invocation with --profile or the
 <SERVICE>_CREDENTIAL_REF environment variable).`,
 	}
 	cmd.AddCommand(newListCommand())
@@ -186,7 +186,7 @@ func runList(ctx context.Context, jsonOut, check bool) error {
 	prod := config.ProductName()
 	fmt.Println()
 	fmt.Printf("Active: %s (via %s)\n", activeRef, keychain.DescribeRefSource(st.RefSource()))
-	fmt.Printf("Switch with '%s profiles use <profile>', or per invocation with --ref.\n", prod)
+	fmt.Printf("Switch with '%s profiles use <profile>', or per invocation with --profile.\n", prod)
 	for _, r := range rows {
 		if r.Active && !r.TokenPresent {
 			fmt.Printf("The active profile has no stored token - run '%s init' to authenticate it.\n", prod)
@@ -226,7 +226,7 @@ account every subsequent command uses. Accepts a bare profile name ("work")
 or a full <service>/<profile> ref for this CLI.
 
 Switching never touches tokens: the previous profile's token stays stored
-and can be switched back to at any time. A per-invocation --ref flag or the
+and can be switched back to at any time. A per-invocation --profile flag or the
 <SERVICE>_CREDENTIAL_REF environment variable still takes precedence over
 the switched binding.`,
 		Args: cobra.ExactArgs(1),

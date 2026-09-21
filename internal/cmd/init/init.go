@@ -73,10 +73,9 @@ You can also copy your credentials.json to the clipboard and run init — it wil
 read, validate, and write it to the config directory for you.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if opts.profile != "" {
-				if _, err := applyProfileFlag(opts.profile); err != nil {
-					return err
-				}
+			opts.profile = ""
+			if f := cmd.Flag("profile"); f != nil {
+				opts.profile = f.Value.String()
 			}
 			return runWith(cmd.Context(), defaultDeps(), opts)
 		},
@@ -86,29 +85,7 @@ read, validate, and write it to the config directory for you.`,
 	cmd.Flags().BoolVar(&opts.noBrowser, "no-browser", false, "Don't try to open the consent URL in a browser")
 	cmd.Flags().BoolVar(&opts.noVerify, "no-verify", false, "Skip connectivity verification after setup")
 	cmd.Flags().BoolVar(&opts.authCodeStdin, "auth-code-stdin", false, "Read the OAuth authorization code/redirect URL from stdin (two-phase install; implies no browser-open)")
-	cmd.Flags().StringVar(&opts.profile, "profile", "", "Authenticate the named profile (stored as <service>/<name>) instead of the active one - the way to ADD an account without touching the active profile's token")
-
 	return cmd
-}
-
-// applyProfileFlag routes this init run at <service>/<name> via the same
-// per-invocation override mechanism as the global --ref flag (flag-level
-// precedence; the one-time migration is suppressed automatically, exactly as
-// for --ref). Returns the resolved ref.
-func applyProfileFlag(profile string) (string, error) {
-	if v, set := keychain.GetCredentialRefOverride(); set && v != "" {
-		return "", fmt.Errorf("--profile and --ref are mutually exclusive (--ref %s was given)", v)
-	}
-	service, _, err := credstore.ParseRef(config.DefaultCredentialRef)
-	if err != nil {
-		return "", err
-	}
-	ref, err := credstore.FormatRef(service, profile)
-	if err != nil {
-		return "", fmt.Errorf("invalid profile name %q (allowed characters: letters, digits, '-', '_'): %w", profile, err)
-	}
-	keychain.SetCredentialRefOverride(ref, true)
-	return ref, nil
 }
 
 // initDeps groups every external collaborator the wizard touches. Tests
@@ -570,7 +547,7 @@ func finishRun(d initDeps, opts *initOptions, targetRef string) error {
 	d.View.Println("")
 	d.View.Printf("Profile %s is authenticated but not active.\n", targetRef)
 	d.View.Printf("Make it active:      %s profiles use %s\n", prod, opts.profile)
-	d.View.Printf("Use per invocation:  %s --ref %s <command>\n", prod, targetRef)
+	d.View.Printf("Use per invocation:  %s --profile %s <command>\n", prod, opts.profile)
 	return nil
 }
 

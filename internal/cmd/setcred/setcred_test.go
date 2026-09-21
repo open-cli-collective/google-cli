@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/oauth2"
+
 	"github.com/open-cli-collective/google-cli/internal/credtest"
 	"github.com/open-cli-collective/google-cli/internal/keychain"
 )
@@ -24,6 +26,50 @@ func TestSetCredentialStdin(t *testing.T) {
 	tok, err := st.Token()
 	if err != nil || tok.AccessToken != "SECRET-ACCESS" {
 		t.Fatalf("token not stored: %+v err=%v", tok, err)
+	}
+}
+
+func TestSetCredentialUsesInheritedProfile(t *testing.T) {
+	credtest.Setup(t)
+	defaultStore, err := keychain.OpenNoMigrate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := defaultStore.SetToken(&oauth2.Token{AccessToken: "DEFAULT-ACCESS", RefreshToken: "DEFAULT-REFRESH"}); err != nil {
+		_ = defaultStore.Close()
+		t.Fatal(err)
+	}
+	_ = defaultStore.Close()
+
+	keychain.SetCredentialRefOverride("google-readonly/work", true)
+	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
+	if err := run(&options{key: keychain.KeyOAuthToken, stdin: true, in: strings.NewReader(tokenJSON)}); err != nil {
+		t.Fatalf("set-credential --profile work: %v", err)
+	}
+
+	keychain.SetCredentialRefOverride("", false)
+	defaultStore, err = keychain.OpenNoMigrate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultToken, err := defaultStore.Token()
+	_ = defaultStore.Close()
+	if err != nil || defaultToken.AccessToken != "DEFAULT-ACCESS" || defaultToken.RefreshToken != "DEFAULT-REFRESH" {
+		t.Fatalf("configured profile token changed: %+v err=%v", defaultToken, err)
+	}
+
+	keychain.SetCredentialRefOverride("google-readonly/work", true)
+	workStore, err := keychain.OpenNoMigrate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = workStore.Close() }()
+	workToken, err := workStore.Token()
+	if got := workStore.Ref(); got != "google-readonly/work" {
+		t.Fatalf("stored credential ref = %q, want google-readonly/work", got)
+	}
+	if err != nil || workToken.AccessToken != "SECRET-ACCESS" || workToken.RefreshToken != "SECRET-REFRESH" {
+		t.Fatalf("selected profile token missing: %+v err=%v", workToken, err)
 	}
 }
 

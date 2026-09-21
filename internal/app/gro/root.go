@@ -80,7 +80,7 @@ func init() {
 	// Set custom version template to include commit and build date
 	rootCmd.SetVersionTemplate("gro " + version.Info() + "\n")
 
-	// Global flags (verbose, no-color, backend, ref)
+	// Global flags (verbose, no-color, backend, profile)
 	rootutil.AddGlobalFlags(rootCmd, &verbose, &noColor)
 
 	// Register commands
