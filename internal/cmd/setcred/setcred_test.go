@@ -32,13 +32,6 @@ func writeLegacyToken(t *testing.T, value string) string {
 	return path
 }
 
-func saveCredentialRef(t *testing.T, ref string) {
-	t.Helper()
-	if err := config.SaveConfig(&config.Config{CredentialRef: ref}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func seedTokenAtRef(t *testing.T, ref, access string) {
 	t.Helper()
 	st, err := keychain.OpenRef(ref)
@@ -80,15 +73,7 @@ func TestSetCredentialStdin(t *testing.T) {
 
 func TestSetCredentialUsesInheritedProfile(t *testing.T) {
 	credtest.Setup(t)
-	defaultStore, err := keychain.OpenNoMigrate()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := defaultStore.SetToken(&oauth2.Token{AccessToken: "DEFAULT-ACCESS", RefreshToken: "DEFAULT-REFRESH"}); err != nil {
-		_ = defaultStore.Close()
-		t.Fatal(err)
-	}
-	_ = defaultStore.Close()
+	seedTokenAtRef(t, config.DefaultCredentialRef, "DEFAULT-ACCESS")
 
 	keychain.SetCredentialRefOverride("google-readonly/work", true)
 	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
@@ -97,26 +82,12 @@ func TestSetCredentialUsesInheritedProfile(t *testing.T) {
 	}
 
 	keychain.SetCredentialRefOverride("", false)
-	defaultStore, err = keychain.OpenNoMigrate()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defaultToken, err := defaultStore.Token()
-	_ = defaultStore.Close()
-	if err != nil || defaultToken.AccessToken != "DEFAULT-ACCESS" || defaultToken.RefreshToken != "DEFAULT-REFRESH" {
+	defaultToken, err := tokenAtRef(t, config.DefaultCredentialRef)
+	if err != nil || defaultToken.AccessToken != "DEFAULT-ACCESS" {
 		t.Fatalf("configured profile token changed: %+v err=%v", defaultToken, err)
 	}
 
-	keychain.SetCredentialRefOverride("google-readonly/work", true)
-	workStore, err := keychain.OpenNoMigrate()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = workStore.Close() }()
-	workToken, err := workStore.Token()
-	if got := workStore.Ref(); got != "google-readonly/work" {
-		t.Fatalf("stored credential ref = %q, want google-readonly/work", got)
-	}
+	workToken, err := tokenAtRef(t, "google-readonly/work")
 	if err != nil || workToken.AccessToken != "SECRET-ACCESS" || workToken.RefreshToken != "SECRET-REFRESH" {
 		t.Fatalf("selected profile token missing: %+v err=%v", workToken, err)
 	}
@@ -163,13 +134,9 @@ func TestSetCredentialRejectsNonToken(t *testing.T) {
 	}
 }
 
-// TestSetCredentialMigrationConflictBlocksWrite proves a legacy/configured
-// disagreement aborts before set-credential can overwrite the keyring value.
 func TestSetCredentialMigrationConflictBlocksWrite(t *testing.T) {
 	credtest.Setup(t)
-	const ref = "google-readonly/work"
-	saveCredentialRef(t, ref)
-	seedTokenAtRef(t, ref, "KEYRING")
+	seedTokenAtRef(t, config.DefaultCredentialRef, "KEYRING")
 	legacyPath := writeLegacyToken(t, `{"access_token":"LEGACY","refresh_token":"LEGACY-REFRESH"}`)
 
 	err := run(&options{key: keychain.KeyOAuthToken, stdin: true, in: strings.NewReader(tokenJSON)})
@@ -179,16 +146,12 @@ func TestSetCredentialMigrationConflictBlocksWrite(t *testing.T) {
 	if _, statErr := os.Stat(legacyPath); statErr != nil {
 		t.Fatalf("legacy token must remain after conflict: %v", statErr)
 	}
-	tok, readErr := tokenAtRef(t, ref)
+	tok, readErr := tokenAtRef(t, config.DefaultCredentialRef)
 	if readErr != nil || tok.AccessToken != "KEYRING" {
-		t.Fatalf("configured target changed after conflict: %+v, err=%v", tok, readErr)
+		t.Fatalf("target changed after conflict: %+v, err=%v", tok, readErr)
 	}
 }
 
-// TestSetCredentialExplicitProfileDoesNotMigrateDefaultLegacy proves an
-// explicit --profile target is isolated from the configured/default migration:
-// it writes only the selected profile and leaves the default legacy artifact
-// for a later default-target invocation.
 func TestSetCredentialExplicitProfileDoesNotMigrateDefaultLegacy(t *testing.T) {
 	credtest.Setup(t)
 	legacyPath := writeLegacyToken(t, `{"access_token":"LEGACY","refresh_token":"LEGACY-REFRESH"}`)

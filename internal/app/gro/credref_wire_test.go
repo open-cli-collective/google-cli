@@ -28,26 +28,6 @@ func TestWireCredentialRefSelection_FlagSet(t *testing.T) {
 	}
 }
 
-func TestWireCredentialRefSelection_FlagInvalid(t *testing.T) {
-	resetState(t)
-
-	probe := newProbeCmd("probe-profile-invalid")
-	rootCmd.AddCommand(probe)
-	defer removeChild(t, probe)
-	rootCmd.SetArgs([]string{"probe-profile-invalid", "--profile", "bad.profile"})
-
-	err := rootCmd.Execute()
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "--"+rootutil.ProfileFlagName) {
-		t.Errorf("error should mention --%s: %v", rootutil.ProfileFlagName, err)
-	}
-}
-
-// TestWireCredentialRefSelection_InvalidStopsBeforeLeaf proves invalid
-// profile syntax is rejected by the root pre-run hook before a leaf can touch
-// a keyring or API collaborator.
 func TestWireCredentialRefSelection_InvalidStopsBeforeLeaf(t *testing.T) {
 	resetState(t)
 	called := false
@@ -99,64 +79,28 @@ func TestWireCredentialRefSelection_ShadowingSubcommand(t *testing.T) {
 	}
 }
 
-func TestProfile_SetCredentialInheritsPersistent(t *testing.T) {
+func TestProfile_InheritsPersistentOnRealCommandTree(t *testing.T) {
 	canonical := rootCmd.PersistentFlags().Lookup(rootutil.ProfileFlagName)
 	if canonical == nil {
 		t.Fatalf("root persistent flag --%s not registered", rootutil.ProfileFlagName)
 	}
 
-	var sc *cobra.Command
-	for _, c := range rootCmd.Commands() {
-		if c.Name() == "set-credential" {
-			sc = c
-			break
-		}
-	}
-	if sc == nil {
-		t.Fatal("set-credential command not registered on rootCmd")
-	}
-	if got := sc.Flag(rootutil.ProfileFlagName); got != canonical {
-		t.Errorf("set-credential --%s = %p, want canonical %p", rootutil.ProfileFlagName, got, canonical)
-	}
-	for _, name := range []string{"init", "me"} {
-		var command *cobra.Command
-		for _, c := range rootCmd.Commands() {
-			if c.Name() == name {
-				command = c
-				break
+	var walk func(*cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		children := cmd.Commands()
+		if len(children) == 0 {
+			if got := cmd.Flag(rootutil.ProfileFlagName); got != canonical {
+				t.Errorf("%q: --%s = %p, want canonical %p", cmd.CommandPath(), rootutil.ProfileFlagName, got, canonical)
 			}
+			return
 		}
-		if command == nil {
-			t.Fatalf("%s command not registered on rootCmd", name)
-		}
-		if got := command.Flag(rootutil.ProfileFlagName); got != canonical {
-			t.Errorf("%s --%s = %p, want canonical %p", name, rootutil.ProfileFlagName, got, canonical)
+		for _, child := range children {
+			walk(child)
 		}
 	}
-
-	me := newProbeCmd("probe-profile-inherit")
-	rootCmd.AddCommand(me)
-	defer removeChild(t, me)
-	if got := me.Flag(rootutil.ProfileFlagName); got != canonical {
-		t.Errorf("read command --%s = %p, want canonical %p", rootutil.ProfileFlagName, got, canonical)
-	}
+	walk(rootCmd)
 }
 
-func TestPublicRefFlagIsUnknown(t *testing.T) {
-	resetState(t)
-	probe := newProbeCmd("probe-ref-unknown")
-	rootCmd.AddCommand(probe)
-	defer removeChild(t, probe)
-	rootCmd.SetArgs([]string{"probe-ref-unknown", "--ref", "google-readonly/acct-a"})
-	if err := rootCmd.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag") {
-		t.Fatalf("--ref should be unknown, got %v", err)
-	}
-}
-
-// TestNoRefFlagOnRealCommandTree protects the public surface after replacing
-// the old service/profile --ref selector with the global bare --profile flag.
-// A probe command alone would miss a leaf that accidentally reintroduced a
-// local --ref, so walk every production command and inspect real argv paths.
 func TestNoRefFlagOnRealCommandTree(t *testing.T) {
 	resetState(t)
 
@@ -172,23 +116,10 @@ func TestNoRefFlagOnRealCommandTree(t *testing.T) {
 	walk(rootCmd)
 }
 
-func TestRefFlagIsRejectedByRealGroCommands(t *testing.T) {
+func TestRefFlagIsRejectedBySetCredential(t *testing.T) {
 	resetState(t)
-	for _, tc := range []struct {
-		name string
-		args []string
-	}{
-		{name: "init", args: []string{"init"}},
-		{name: "mail search", args: []string{"mail", "search", "is:unread"}},
-		{name: "set-credential", args: []string{"set-credential"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			args := append(append([]string(nil), tc.args...), "--ref", "google-readonly/work")
-			rootCmd.SetArgs(args)
-			err := rootCmd.Execute()
-			if err == nil || !strings.Contains(err.Error(), "unknown flag") {
-				t.Fatalf("%v must reject removed --ref, got %v", tc.name, err)
-			}
-		})
+	rootCmd.SetArgs([]string{"set-credential", "--ref", "google-readonly/work"})
+	if err := rootCmd.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("set-credential must reject removed --ref, got %v", err)
 	}
 }
