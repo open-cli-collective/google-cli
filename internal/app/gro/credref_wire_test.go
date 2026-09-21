@@ -45,6 +45,35 @@ func TestWireCredentialRefSelection_FlagInvalid(t *testing.T) {
 	}
 }
 
+// TestWireCredentialRefSelection_InvalidStopsBeforeLeaf proves invalid
+// profile syntax is rejected by the root pre-run hook before a leaf can touch
+// a keyring or API collaborator.
+func TestWireCredentialRefSelection_InvalidStopsBeforeLeaf(t *testing.T) {
+	resetState(t)
+	called := false
+	probe := &cobra.Command{
+		Use: "probe-profile-sentinel",
+		RunE: func(*cobra.Command, []string) error {
+			called = true
+			return nil
+		},
+	}
+	rootCmd.AddCommand(probe)
+	defer removeChild(t, probe)
+	rootCmd.SetArgs([]string{"probe-profile-sentinel", "--profile", "bad.profile"})
+
+	err := rootCmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--"+rootutil.ProfileFlagName) {
+		t.Fatalf("expected invalid --profile error, got %v", err)
+	}
+	if called {
+		t.Fatal("invalid --profile must stop before the leaf RunE")
+	}
+	if _, set := keychain.GetCredentialRefOverride(); set {
+		t.Fatal("invalid --profile must not record a credential-ref override")
+	}
+}
+
 func TestWireCredentialRefSelection_ShadowingSubcommand(t *testing.T) {
 	resetState(t)
 	t.Setenv(keychain.CredentialRefEnvVar(), "")
@@ -121,5 +150,45 @@ func TestPublicRefFlagIsUnknown(t *testing.T) {
 	rootCmd.SetArgs([]string{"probe-ref-unknown", "--ref", "google-readonly/acct-a"})
 	if err := rootCmd.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag") {
 		t.Fatalf("--ref should be unknown, got %v", err)
+	}
+}
+
+// TestNoRefFlagOnRealCommandTree protects the public surface after replacing
+// the old service/profile --ref selector with the global bare --profile flag.
+// A probe command alone would miss a leaf that accidentally reintroduced a
+// local --ref, so walk every production command and inspect real argv paths.
+func TestNoRefFlagOnRealCommandTree(t *testing.T) {
+	resetState(t)
+
+	var walk func(*cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		if f := cmd.Flag("ref"); f != nil {
+			t.Errorf("%q exposes removed --ref flag (%s)", cmd.CommandPath(), f.Usage)
+		}
+		for _, child := range cmd.Commands() {
+			walk(child)
+		}
+	}
+	walk(rootCmd)
+}
+
+func TestRefFlagIsRejectedByRealGroCommands(t *testing.T) {
+	resetState(t)
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "init", args: []string{"init"}},
+		{name: "mail search", args: []string{"mail", "search", "is:unread"}},
+		{name: "set-credential", args: []string{"set-credential"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := append(append([]string(nil), tc.args...), "--ref", "google-readonly/work")
+			rootCmd.SetArgs(args)
+			err := rootCmd.Execute()
+			if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+				t.Fatalf("%v must reject removed --ref, got %v", tc.name, err)
+			}
+		})
 	}
 }

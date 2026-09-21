@@ -42,6 +42,14 @@ type initOptions struct {
 
 // NewCommand returns the init command.
 func NewCommand() *cobra.Command {
+	return newCommandWithDeps(defaultDeps)
+}
+
+// newCommandWithDeps builds init with an injected dependency factory. The
+// production constructor uses defaultDeps; tests use this seam to execute the
+// real Cobra flag-inheritance path without touching a browser, keyring, or
+// Google API.
+func newCommandWithDeps(deps func() initDeps) *cobra.Command {
 	opts := &initOptions{}
 
 	cmd := &cobra.Command{
@@ -77,7 +85,7 @@ read, validate, and write it to the config directory for you.`,
 			if f := cmd.Flag("profile"); f != nil {
 				opts.profile = f.Value.String()
 			}
-			return runWith(cmd.Context(), defaultDeps(), opts)
+			return runWith(cmd.Context(), deps(), opts)
 		},
 	}
 
