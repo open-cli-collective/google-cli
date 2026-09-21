@@ -19,7 +19,6 @@ import (
 )
 
 type options struct {
-	ref     string
 	key     string
 	stdin   bool
 	fromEnv string
@@ -48,7 +47,6 @@ flag or positional argument. Only the key 'oauth_token' is accepted.
 			return run(opts)
 		},
 	}
-	cmd.Flags().StringVar(&opts.ref, "ref", "", "Credential ref (default: config.yml credential_ref)")
 	cmd.Flags().StringVar(&opts.key, "key", "", "Key to set: oauth_token")
 	cmd.Flags().BoolVar(&opts.stdin, "stdin", false, "Read the token from stdin")
 	cmd.Flags().StringVar(&opts.fromEnv, "from-env", "", "Read the token from this env var")
@@ -83,29 +81,10 @@ func run(opts *options) error {
 		return fmt.Errorf("token has neither an access nor a refresh token")
 	}
 
-	// §1.8: when targeting the default ref, run the one-time legacy migration
-	// first (shared keychain.EnsureMigrated, same guarantee as init).
-	// Otherwise a pre-existing legacy token.json + this fresh keyring write
-	// would collide on the next real command's Open() with a §1.8 conflict. A
-	// genuine conflict here aborts loudly (the user must resolve it, not
-	// silently overwrite via this scriptable path). An explicit --ref never
-	// migrates — the one-time migration only ever targets the canonical
-	// configured ref (see keychain.OpenRef).
-	migrated := false
-	if opts.ref == "" {
-		if merr := keychain.EnsureMigrated(); merr != nil {
-			return merr
-		}
-		migrated = true
-	}
-
-	st, err := keychain.OpenRef(opts.ref) // ingress: runMigration=false
+	// keychain.Open applies the inherited --profile selector and keeps the
+	// one-time migration scoped to the configured/default profile.
+	st, err := keychain.Open()
 	if err != nil {
-		if migrated {
-			// The legacy original may already have been consumed by the
-			// migration above; make the failure actionable.
-			return fmt.Errorf("legacy migration succeeded but the keyring write could not be opened (run 'the CLI init' to re-authenticate): %w", err)
-		}
 		return err
 	}
 	defer func() { _ = st.Close() }()

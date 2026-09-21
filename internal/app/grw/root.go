@@ -68,7 +68,7 @@ func ExecuteContext(ctx context.Context) {
 func init() {
 	rootCmd.SetVersionTemplate("grw " + version.Info() + "\n")
 
-	// Global flags (verbose, no-color, backend, ref)
+	// Global flags (verbose, no-color, backend, profile)
 	rootutil.AddGlobalFlags(rootCmd, &verbose, &noColor)
 
 	// Register commands

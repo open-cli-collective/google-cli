@@ -1,7 +1,7 @@
 // Package rootutil holds the root-command scaffolding shared by every CLI built
 // on this library: the standard global flags (--verbose, --no-color,
-// --backend, --ref), the PersistentPreRunE wiring that records the
-// backend/credential-ref selection for the next keychain.Open call, and the
+// --backend, --profile), the PersistentPreRunE wiring that records the
+// backend/profile selection for the next keychain.Open call, and the
 // migration-notice flush that must wrap execution. Each CLI's root package
 // supplies its own Use/Short/Long and command set and calls these helpers, so
 // the plumbing lives in exactly one place.
@@ -18,33 +18,32 @@ import (
 
 	cccredstore "github.com/open-cli-collective/cli-common/credstore"
 
+	"github.com/open-cli-collective/google-cli/internal/config"
 	"github.com/open-cli-collective/google-cli/internal/keychain"
 	"github.com/open-cli-collective/google-cli/internal/log"
 	"github.com/open-cli-collective/google-cli/internal/migrationsink"
 )
 
-// CredentialRefFlagName is the global per-invocation credential-ref selector.
-// It shares its name with set-credential's own write-target --ref (a local flag
-// that shadows this persistent one for that command only).
-const CredentialRefFlagName = "ref"
+// ProfileFlagName is the global per-invocation credential-profile selector.
+const ProfileFlagName = "profile"
 
 // AddGlobalFlags registers the standard persistent flags on cmd, binding
-// verbose and noColor to the given pointers. The --ref help shows the env var
+// verbose and noColor to the given pointers. The --profile help shows the env var
 // by its <SERVICE>_ pattern rather than the resolved name because flags are
 // registered at package-init time, before config.Register runs.
 func AddGlobalFlags(cmd *cobra.Command, verbose, noColor *bool) {
 	cmd.PersistentFlags().BoolVarP(verbose, "verbose", "v", false, "Enable verbose output for debugging")
 	cmd.PersistentFlags().BoolVar(noColor, "no-color", false, "Disable colored output")
 	cmd.PersistentFlags().String(cccredstore.BackendFlagName, "", cccredstore.BackendFlagUsage())
-	cmd.PersistentFlags().String(CredentialRefFlagName, "", fmt.Sprintf(
-		"Credential ref <service>/<profile> for this invocation, so concurrent commands "+
+	cmd.PersistentFlags().String(ProfileFlagName, "", fmt.Sprintf(
+		"Select profile <name> for this invocation, so concurrent commands "+
 			"can target different accounts without racing on config.yml "+
 			"(precedence: --%s flag > <SERVICE>_CREDENTIAL_REF env > config credential_ref)",
-		CredentialRefFlagName))
+		ProfileFlagName))
 }
 
 // ApplyGlobalFlags runs the shared PersistentPreRunE logic: verbosity, color,
-// and backend/ref wiring. Each root calls it from its own PersistentPreRunE.
+// and backend/profile wiring. Each root calls it from its own PersistentPreRunE.
 func ApplyGlobalFlags(cmd *cobra.Command, verbose, noColor bool) error {
 	log.Verbose = verbose
 	if noColor {
@@ -77,21 +76,26 @@ func WireBackendSelection(cmd *cobra.Command) error {
 	return nil
 }
 
-// WireCredentialRefSelection records the user-supplied --ref flag for the next
-// keychain.Open* call and validates its <service>/<profile> shape up front so a
-// bad value fails with a clear "--ref" error before any keyring work. The
-// resolved precedence (--ref flag > <SERVICE>_CREDENTIAL_REF env > config
-// credential_ref) is applied at keychain.open; this hook only records the flag.
+// WireCredentialRefSelection qualifies the user-supplied --profile name with
+// the registered service and records it for the next keychain.Open* call. The
+// credstore formatter validates the bare name before any keyring work. The
+// resolved precedence (--profile flag > <SERVICE>_CREDENTIAL_REF env > config
+// credential_ref) is applied at keychain.open.
 func WireCredentialRefSelection(cmd *cobra.Command) error {
-	f := cmd.Flag(CredentialRefFlagName)
+	f := cmd.Flag(ProfileFlagName)
 	if f == nil {
 		return nil
 	}
 	value := f.Value.String()
 	changed := f.Changed
-	if changed && value != "" {
-		if _, _, err := cccredstore.ParseRef(value); err != nil {
-			return fmt.Errorf("--%s: %w", CredentialRefFlagName, err)
+	if changed {
+		service, _, err := cccredstore.ParseRef(config.DefaultCredentialRef)
+		if err != nil {
+			return fmt.Errorf("invalid default credential ref: %w", err)
+		}
+		value, err = cccredstore.FormatRef(service, value)
+		if err != nil {
+			return fmt.Errorf("--%s: %w", ProfileFlagName, err)
 		}
 	}
 	keychain.SetCredentialRefOverride(value, changed)

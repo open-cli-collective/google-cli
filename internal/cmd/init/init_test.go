@@ -18,7 +18,6 @@ import (
 
 	"github.com/open-cli-collective/google-cli/internal/api/people"
 	"github.com/open-cli-collective/google-cli/internal/config"
-	"github.com/open-cli-collective/google-cli/internal/keychain"
 	"github.com/open-cli-collective/google-cli/internal/testutil"
 	"github.com/open-cli-collective/google-cli/internal/view"
 )
@@ -1041,41 +1040,6 @@ func TestRunWith_EnsureMigratedRunsFirst(t *testing.T) {
 	}
 }
 
-// ---- target announcement, --profile, identity recording -------------------
-
-func TestApplyProfileFlag(t *testing.T) {
-	// Not Parallel: mutates the package-global credential-ref override.
-	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
-
-	t.Run("valid name routes the run at service/name", func(t *testing.T) {
-		keychain.SetCredentialRefOverride("", false)
-		ref, err := applyProfileFlag("work")
-		if err != nil {
-			t.Fatalf("applyProfileFlag: %v", err)
-		}
-		if ref != "google-readonly/work" {
-			t.Errorf("ref = %q, want google-readonly/work", ref)
-		}
-		if v, set := keychain.GetCredentialRefOverride(); !set || v != "google-readonly/work" {
-			t.Errorf("override = (%q,%v), want (google-readonly/work,true)", v, set)
-		}
-	})
-
-	t.Run("invalid characters rejected", func(t *testing.T) {
-		keychain.SetCredentialRefOverride("", false)
-		if _, err := applyProfileFlag("user@example.com"); err == nil {
-			t.Fatal("expected error for '@' in profile name")
-		}
-	})
-
-	t.Run("conflict with --ref rejected", func(t *testing.T) {
-		keychain.SetCredentialRefOverride("google-readonly/other", true)
-		if _, err := applyProfileFlag("work"); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-			t.Fatalf("expected mutual-exclusion error, got %v", err)
-		}
-	})
-}
-
 // TestRunWithAnnouncesTarget pins the up-front naming: which profile this
 // run touches, where it was selected, and which account it currently holds —
 // BEFORE any prompt or write.
@@ -1085,8 +1049,8 @@ func TestRunWithAnnouncesTarget(t *testing.T) {
 	d := baseDeps(t, fs)
 	out := &bytes.Buffer{}
 	d.View = view.NewWithWriters(out, out)
-	d.DescribeTarget = func() (string, string, string) {
-		return "google-readonly/default", "config.yml credential_ref", "ada@example.com"
+	d.DescribeTarget = func() (string, config.RefSource, string) {
+		return "google-readonly/default", config.RefSourceConfig, "ada@example.com"
 	}
 
 	srcDir := t.TempDir()
@@ -1119,8 +1083,8 @@ func TestReauthPromptNamesTarget(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
-	d.DescribeTarget = func() (string, string, string) {
-		return "google-readonly/default", "config.yml credential_ref", "ada@example.com"
+	d.DescribeTarget = func() (string, config.RefSource, string) {
+		return "google-readonly/default", config.RefSourceConfig, "ada@example.com"
 	}
 	d.HasStoredToken = func() bool { return true }
 	calls := 0
@@ -1209,8 +1173,8 @@ func TestRunWithProfileFlagGuidance(t *testing.T) {
 	d := baseDeps(t, fs)
 	out := &bytes.Buffer{}
 	d.View = view.NewWithWriters(out, out)
-	d.DescribeTarget = func() (string, string, string) {
-		return "google-readonly/work", "--ref flag", ""
+	d.DescribeTarget = func() (string, config.RefSource, string) {
+		return "google-readonly/work", config.RefSourceFlag, ""
 	}
 
 	srcDir := t.TempDir()
@@ -1220,7 +1184,7 @@ func TestRunWithProfileFlagGuidance(t *testing.T) {
 	}
 	d.Prompter = &stubPrompter{redirectURL: "http://localhost/?code=ABC"}
 
-	if err := runWith(context.Background(), d, &initOptions{credentialsFile: src, noBrowser: true, profile: "work"}); err != nil {
+	if err := runWith(context.Background(), d, &initOptions{credentialsFile: src, noBrowser: true}); err != nil {
 		t.Fatalf("runWith: %v", err)
 	}
 	got := out.String()
@@ -1228,7 +1192,7 @@ func TestRunWithProfileFlagGuidance(t *testing.T) {
 		"Setting up profile: google-readonly/work (via --profile flag)",
 		"authenticated but not active",
 		"profiles use work",
-		"--ref google-readonly/work",
+		"--profile work",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)

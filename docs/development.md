@@ -63,7 +63,7 @@ The required checks on `main` are `build`, `tidy`, `test`, `lint`, `static-relea
 
 ## Releases
 
-There is one release stream for both binaries. `version.txt` contains the major/minor line (`1.2`), and automatic releases create `v1.2.N` tags. A squash merge to `main` whose final commit begins with `feat:` or `fix:` triggers the automatic release decision when it changes Go source, `go.mod`, `go.sum`, `version.txt`, or `.goreleaser.yaml`. GoReleaser configuration changes therefore ship too; documentation, test, CI, and chore-only merges do not cut a release.
+There is one release stream for both binaries. `version.txt` contains the major/minor line (`2.0`), and automatic releases create `v2.0.N` tags. A squash merge to `main` whose final commit begins with `feat:` or `fix:` triggers the automatic release decision when it changes Go source, `go.mod`, `go.sum`, `version.txt`, or `.goreleaser.yaml`. GoReleaser configuration changes therefore ship too; documentation, test, CI, and chore-only merges do not cut a release.
 
 Each tag publishes both binaries and their platform archives through the shared release automation. Homebrew, Chocolatey, WinGet, and Linux package publication fan out from that release. Follow the [release](https://github.com/open-cli-collective/cli-common/blob/main/docs/release.md) and [distribution](https://github.com/open-cli-collective/cli-common/blob/main/docs/distribution.md) standards rather than duplicating workflow policy here.
 
@@ -81,8 +81,7 @@ and asserts it selects the Keychain backend, which catches a static or mis-tagge
 is published.
 
 `version.txt` holds only `MAJOR.MINOR`; the `major_minor_run_patch` scheme appends the workflow
-run number, so tags are `v1.2.N` and never collide or need a bump commit. The stream starts at
-`1.2` because `gro` had already released `1.1.x`; continuing its line keeps upgrades monotonic for
-existing installs.
+run number, so tags are `v2.0.N` and never collide or need a bump commit. The stream starts at
+`2.0` because replacing the public credential selector is a breaking CLI change.
 
 Use a focused branch, run `make check`, and open a pull request. Keep the pull-request title in conventional-commit form because squash merge makes that title the commit on `main` and therefore the release signal.
