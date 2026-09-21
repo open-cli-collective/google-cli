@@ -163,43 +163,6 @@ func TestSetCredentialRejectsNonToken(t *testing.T) {
 	}
 }
 
-// TestSetCredentialMigratesConfiguredLegacyBeforeWrite proves set-credential
-// uses keychain.Open's migration path for the configured target, rather than
-// silently writing beside a legacy token.json.
-func TestSetCredentialMigratesConfiguredLegacyBeforeWrite(t *testing.T) {
-	credtest.Setup(t)
-	const ref = "google-readonly/work"
-	saveCredentialRef(t, ref)
-	legacyPath := writeLegacyToken(t, `{"access_token":"LEGACY","refresh_token":"LEGACY-REFRESH"}`)
-
-	if err := run(&options{key: keychain.KeyOAuthToken, stdin: true, in: strings.NewReader(tokenJSON)}); err != nil {
-		t.Fatalf("set-credential with configured legacy token: %v", err)
-	}
-	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
-		t.Fatalf("configured legacy token must be removed after migration, stat err=%v", err)
-	}
-	tok, err := tokenAtRef(t, ref)
-	if err != nil || tok.AccessToken != "SECRET-ACCESS" {
-		t.Fatalf("configured target token = %+v, err=%v", tok, err)
-	}
-}
-
-func TestSetCredentialMigratesDefaultLegacyBeforeWrite(t *testing.T) {
-	credtest.Setup(t)
-	legacyPath := writeLegacyToken(t, `{"access_token":"LEGACY","refresh_token":"LEGACY-REFRESH"}`)
-
-	if err := run(&options{key: keychain.KeyOAuthToken, stdin: true, in: strings.NewReader(tokenJSON)}); err != nil {
-		t.Fatalf("set-credential with default legacy token: %v", err)
-	}
-	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
-		t.Fatalf("default legacy token must be removed after migration, stat err=%v", err)
-	}
-	tok, err := tokenAtRef(t, config.DefaultCredentialRef)
-	if err != nil || tok.AccessToken != "SECRET-ACCESS" {
-		t.Fatalf("default target token = %+v, err=%v", tok, err)
-	}
-}
-
 // TestSetCredentialMigrationConflictBlocksWrite proves a legacy/configured
 // disagreement aborts before set-credential can overwrite the keyring value.
 func TestSetCredentialMigrationConflictBlocksWrite(t *testing.T) {

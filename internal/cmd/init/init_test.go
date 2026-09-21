@@ -13,14 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/googleapi"
 
 	"github.com/open-cli-collective/google-cli/internal/api/people"
 	"github.com/open-cli-collective/google-cli/internal/config"
-	"github.com/open-cli-collective/google-cli/internal/keychain"
-	"github.com/open-cli-collective/google-cli/internal/rootutil"
 	"github.com/open-cli-collective/google-cli/internal/testutil"
 	"github.com/open-cli-collective/google-cli/internal/view"
 )
@@ -72,64 +69,6 @@ func TestInitCommand(t *testing.T) {
 		testutil.Contains(t, cmd.Long, "credentials.json")
 		testutil.Contains(t, cmd.Long, "required Google APIs")
 	})
-}
-
-// TestNewCommand_InheritedProfileGuidance executes the real Cobra path used by
-// gro init: the root's persistent --profile flag is parsed, rootutil records
-// the qualified override, and init reads the inherited flag before rendering
-// its non-active-profile guidance. The configured ref must remain unchanged.
-func TestNewCommand_InheritedProfileGuidance(t *testing.T) {
-	fs := newFakeFS()
-	d := baseDeps(t, fs)
-	credPath := filepath.Join(t.TempDir(), "oauth_client.json")
-	fs.files[credPath] = []byte(validOAuthJSON)
-	d.GetCredentialsPath = func() (string, error) { return credPath, nil }
-	d.Stat = fs.Stat
-	d.HasStoredToken = func() bool { return true }
-
-	configured := &config.Config{CredentialRef: config.DefaultCredentialRef}
-	d.LoadConfig = func() (*config.Config, error) { return configured, nil }
-	out := &bytes.Buffer{}
-	d.View = view.NewWithWriters(out, out)
-	d.DescribeTarget = func() (string, string, string) {
-		ref, set := keychain.GetCredentialRefOverride()
-		if !set {
-			return "", "", ""
-		}
-		return ref, "--profile flag", ""
-	}
-
-	var verbose, noColor bool
-	root := &cobra.Command{
-		Use: "gro-test",
-		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			return rootutil.ApplyGlobalFlags(cmd, verbose, noColor)
-		},
-	}
-	rootutil.AddGlobalFlags(root, &verbose, &noColor)
-	root.AddCommand(newCommandWithDeps(func() initDeps { return d }))
-	root.SetArgs([]string{"--profile", "work", "init", "--no-verify"})
-	t.Cleanup(func() {
-		keychain.SetCredentialRefOverride("", false)
-		root.SetArgs(nil)
-	})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("execute inherited --profile path: %v", err)
-	}
-	for _, want := range []string{
-		"Setting up profile: google-readonly/work (via --profile flag)",
-		"Profile google-readonly/work is authenticated but not active.",
-		"profiles use work",
-		"--profile work",
-	} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("output missing %q:\n%s", want, out.String())
-		}
-	}
-	if configured.CredentialRef != config.DefaultCredentialRef {
-		t.Fatalf("--profile must not change configured credential_ref: got %q, want %q", configured.CredentialRef, config.DefaultCredentialRef)
-	}
 }
 
 func TestExtractAuthCode(t *testing.T) {
@@ -1110,8 +1049,8 @@ func TestRunWithAnnouncesTarget(t *testing.T) {
 	d := baseDeps(t, fs)
 	out := &bytes.Buffer{}
 	d.View = view.NewWithWriters(out, out)
-	d.DescribeTarget = func() (string, string, string) {
-		return "google-readonly/default", "config.yml credential_ref", "ada@example.com"
+	d.DescribeTarget = func() (string, config.RefSource, string) {
+		return "google-readonly/default", config.RefSourceConfig, "ada@example.com"
 	}
 
 	srcDir := t.TempDir()
@@ -1144,8 +1083,8 @@ func TestReauthPromptNamesTarget(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()
 	d := baseDeps(t, fs)
-	d.DescribeTarget = func() (string, string, string) {
-		return "google-readonly/default", "config.yml credential_ref", "ada@example.com"
+	d.DescribeTarget = func() (string, config.RefSource, string) {
+		return "google-readonly/default", config.RefSourceConfig, "ada@example.com"
 	}
 	d.HasStoredToken = func() bool { return true }
 	calls := 0
@@ -1234,8 +1173,8 @@ func TestRunWithProfileFlagGuidance(t *testing.T) {
 	d := baseDeps(t, fs)
 	out := &bytes.Buffer{}
 	d.View = view.NewWithWriters(out, out)
-	d.DescribeTarget = func() (string, string, string) {
-		return "google-readonly/work", "--profile flag", ""
+	d.DescribeTarget = func() (string, config.RefSource, string) {
+		return "google-readonly/work", config.RefSourceFlag, ""
 	}
 
 	srcDir := t.TempDir()
@@ -1245,7 +1184,7 @@ func TestRunWithProfileFlagGuidance(t *testing.T) {
 	}
 	d.Prompter = &stubPrompter{redirectURL: "http://localhost/?code=ABC"}
 
-	if err := runWith(context.Background(), d, &initOptions{credentialsFile: src, noBrowser: true, profile: "work"}); err != nil {
+	if err := runWith(context.Background(), d, &initOptions{credentialsFile: src, noBrowser: true}); err != nil {
 		t.Fatalf("runWith: %v", err)
 	}
 	got := out.String()

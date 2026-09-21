@@ -37,19 +37,10 @@ type initOptions struct {
 	noBrowser       bool
 	noVerify        bool
 	authCodeStdin   bool
-	profile         string
 }
 
 // NewCommand returns the init command.
 func NewCommand() *cobra.Command {
-	return newCommandWithDeps(defaultDeps)
-}
-
-// newCommandWithDeps builds init with an injected dependency factory. The
-// production constructor uses defaultDeps; tests use this seam to execute the
-// real Cobra flag-inheritance path without touching a browser, keyring, or
-// Google API.
-func newCommandWithDeps(deps func() initDeps) *cobra.Command {
 	opts := &initOptions{}
 
 	cmd := &cobra.Command{
@@ -81,11 +72,7 @@ You can also copy your credentials.json to the clipboard and run init — it wil
 read, validate, and write it to the config directory for you.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			opts.profile = ""
-			if f := cmd.Flag("profile"); f != nil {
-				opts.profile = f.Value.String()
-			}
-			return runWith(cmd.Context(), deps(), opts)
+			return runWith(cmd.Context(), defaultDeps(), opts)
 		},
 	}
 
@@ -134,12 +121,12 @@ type initDeps struct {
 	EnsureMigrated func() error
 
 	// DescribeTarget names the credential ref this run will (re)authenticate,
-	// how it was selected (human label), and the cached account email it
+	// how it was selected, and the cached account email it
 	// currently holds ("" when unknown). Backs the up-front announcement —
 	// init touching "whatever the ref points at" without saying so is how an
 	// intended add-an-account run silently overwrites the active profile's
 	// token. Injected so tests can pin the announcement without a keyring.
-	DescribeTarget func() (ref, sourceLabel, cachedEmail string)
+	DescribeTarget func() (ref string, source config.RefSource, cachedEmail string)
 
 	// RecordIdentity caches the verified account email for the active
 	// profile (best-effort; feeds `profiles list`). Injected for tests.
@@ -245,27 +232,27 @@ func defaultDeps() initDeps {
 }
 
 // describeTarget resolves the ref this run will authenticate (per-invocation
-// overrides included, since OpenNoMigrate applies them), its source label,
+// overrides included, since OpenNoMigrate applies them), its source,
 // and the cached account email. Best-effort: if the keyring can't open, fall
 // back to the loaded config's intent so the announcement still names a ref.
-func describeTarget() (ref, sourceLabel, cachedEmail string) {
+func describeTarget() (ref string, source config.RefSource, cachedEmail string) {
 	st, err := keychain.OpenNoMigrate()
 	if err != nil {
 		cfg, cerr := config.LoadConfigForRuntime()
 		if cerr != nil {
 			return "", "", ""
 		}
-		return cfg.CredentialRef, keychain.DescribeRefSource(cfg.CredentialRefSource()), ""
+		return cfg.CredentialRef, cfg.CredentialRefSource(), ""
 	}
 	defer func() { _ = st.Close() }()
 	ref = st.Ref()
-	sourceLabel = keychain.DescribeRefSource(st.RefSource())
+	source = st.RefSource()
 	if _, profile, perr := credstore.ParseRef(ref); perr == nil {
 		if e, ok := identitycache.Load()[profile]; ok {
 			cachedEmail = e.Email
 		}
 	}
-	return ref, sourceLabel, cachedEmail
+	return ref, source, cachedEmail
 }
 
 // recordIdentity caches the verified email under the active profile so
@@ -396,11 +383,17 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 	// init (re)authenticating "whatever the ref points at" without saying
 	// which profile/account is how an intended add-an-account run silently
 	// overwrites the active profile's token.
-	var targetRef, target string
+	var targetRef, target, targetProfile string
 	if d.DescribeTarget != nil {
-		ref, sourceLabel, cachedEmail := d.DescribeTarget()
-		if opts.profile != "" {
-			sourceLabel = "--profile flag"
+		ref, source, cachedEmail := d.DescribeTarget()
+		sourceLabel := ""
+		if source != "" {
+			sourceLabel = keychain.DescribeRefSource(source)
+		}
+		if source == config.RefSourceFlag {
+			if _, profile, err := credstore.ParseRef(ref); err == nil {
+				targetProfile = profile
+			}
 		}
 		targetRef = ref
 		target = ref
@@ -415,7 +408,7 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 				d.View.Printf("Currently holds:    %s\n", sanitize.Output(cachedEmail))
 				target = fmt.Sprintf("%s (%s)", ref, sanitize.Output(cachedEmail))
 			}
-			if opts.profile == "" {
+			if targetProfile == "" {
 				d.View.Printf("To add a different account instead, use '%s init --profile <name>'.\n", config.ProductName())
 			}
 			d.View.Println("")
@@ -441,7 +434,7 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 		return err
 	}
 	if handled {
-		return finishRun(d, opts, targetRef)
+		return finishRun(d, targetProfile, targetRef)
 	}
 
 	// Step 4: OAuth flow.
@@ -540,22 +533,22 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 		d.View.Printf("  %s me\n", prod)
 	}
 	d.View.Printf("  %s mail search \"is:unread\"\n", prod)
-	return finishRun(d, opts, targetRef)
+	return finishRun(d, targetProfile, targetRef)
 }
 
 // finishRun appends the not-the-active-profile guidance after a successful
 // --profile run: the new account is authenticated but deliberately NOT made
 // active — adding an account must not hijack the default — so the user needs
 // to be told how to reach it.
-func finishRun(d initDeps, opts *initOptions, targetRef string) error {
-	if opts.profile == "" || targetRef == "" {
+func finishRun(d initDeps, profile, targetRef string) error {
+	if profile == "" || targetRef == "" {
 		return nil
 	}
 	prod := config.ProductName()
 	d.View.Println("")
 	d.View.Printf("Profile %s is authenticated but not active.\n", targetRef)
-	d.View.Printf("Make it active:      %s profiles use %s\n", prod, opts.profile)
-	d.View.Printf("Use per invocation:  %s --profile %s <command>\n", prod, opts.profile)
+	d.View.Printf("Make it active:      %s profiles use %s\n", prod, profile)
+	d.View.Printf("Use per invocation:  %s --profile %s <command>\n", prod, profile)
 	return nil
 }
 
