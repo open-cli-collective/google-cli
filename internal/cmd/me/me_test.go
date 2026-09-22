@@ -412,12 +412,12 @@ func TestRunProfileUsesSelectedScopeRecordBeforeClientCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	keychain.SetCredentialRefOverride("google-readonly/work", true)
-	withMockClient(t, &mockPeopleClient{
-		GetMeFunc: func(_ context.Context) (*people.Profile, error) {
-			t.Fatal("People client must not be created when the selected profile scopes are stale")
-			return nil, nil
-		},
-	})
+	origClientFactory := ClientFactory
+	ClientFactory = func(context.Context) (PeopleClient, error) {
+		t.Fatal("People client must not be created when the selected profile scopes are stale")
+		return nil, nil
+	}
+	t.Cleanup(func() { ClientFactory = origClientFactory })
 
 	var out, errOut bytes.Buffer
 	err := run(context.Background(), &out, &errOut, false, false)
