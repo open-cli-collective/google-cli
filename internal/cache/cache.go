@@ -4,9 +4,9 @@
 // state at os.UserCacheDir()/google-readonly (via statedir.Cache). Writes are
 // atomic via cli-common/cache's temp+rename envelope; TTL is hard-coded per
 // resource (no user-configurable cache_ttl_hours — §4.4); reads classify a
-// version/identity mismatch as a miss so schema bumps self-heal. The pre-B2b
-// "<configdir>/cache/" relocation is retained for installs that pre-date the
-// B2b cache move.
+// version/identity mismatch as a miss so schema bumps self-heal. Legacy
+// unscoped cache data is intentionally treated as a miss because it cannot be
+// safely attributed to a profile.
 package cache
 
 import (
@@ -54,14 +54,7 @@ type Cache struct {
 func New() (*Cache, error) {
 	ref, err := keychain.ResolveEffectiveCredentialRef()
 	if err != nil {
-		// Package-level tests that construct infrastructure before registering an
-		// identity have no effective ref; keep their cache hermetic while real
-		// binaries always register one before command execution.
-		if config.DefaultCredentialRef == "" {
-			ref = "test/default"
-		} else {
-			return nil, err
-		}
+		return nil, err
 	}
 	_, profile, err := credstore.ParseRef(ref)
 	if err != nil {

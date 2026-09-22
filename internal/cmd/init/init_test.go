@@ -332,6 +332,60 @@ func TestEnsureCredentialsProfileFileBindsOnlySelectedProfile(t *testing.T) {
 	}
 }
 
+func TestEnsureCredentialsHealsExistingSelectedProfileClient(t *testing.T) {
+	t.Parallel()
+	fs := newFakeFS()
+	d := baseDeps(t, fs)
+	const ref = "google-readonly/work"
+	activePath := filepath.Join(t.TempDir(), "default.json")
+	profilePath := filepath.Join(t.TempDir(), "oauth_clients", "work.json")
+	fs.files[profilePath] = []byte(validOAuthJSON)
+	cfgPtr := &config.Config{
+		CredentialRef: config.DefaultCredentialRef,
+		Profiles: map[string]config.ProfileConfig{
+			"default": {OAuthClientPath: activePath},
+		},
+	}
+	d.LoadConfig = func() (*config.Config, error) { return cfgPtr, nil }
+	d.SaveConfig = func(cfg *config.Config) error { cfgPtr = cfg; return nil }
+	d.GetCredentialsPathForRef = func(got string) (string, error) {
+		if got != ref {
+			t.Fatalf("credentials resolver ref = %q, want %q", got, ref)
+		}
+		return profilePath, nil
+	}
+	d.GetOAuthConfigForRef = func(got string) (*oauth2.Config, error) {
+		if got != ref {
+			t.Fatalf("OAuth resolver ref = %q, want %q", got, ref)
+		}
+		if cfgPtr.OAuthClientPathForRef(got) == "" {
+			return nil, errors.New("selected profile has no client association")
+		}
+		return &oauth2.Config{ClientID: "selected-profile-client"}, nil
+	}
+	d.Prompter = &stubPrompter{}
+
+	if err := ensureCredentialsForRef(d, &initOptions{}, profilePath, ref); err != nil {
+		t.Fatalf("ensureCredentialsForRef: %v", err)
+	}
+	if got := cfgPtr.OAuthClientPathForRef(ref); got != profilePath {
+		t.Fatalf("selected profile client = %q, want %q", got, profilePath)
+	}
+	if got := cfgPtr.OAuthClientPathForRef(config.DefaultCredentialRef); got != activePath {
+		t.Fatalf("active profile client = %q, want %q", got, activePath)
+	}
+	resolved, err := oauthConfigForRef(d, ref)
+	if err != nil {
+		t.Fatalf("oauthConfigForRef after healing: %v", err)
+	}
+	if resolved.ClientID != "selected-profile-client" {
+		t.Fatalf("resolved selected client ID = %q", resolved.ClientID)
+	}
+	if len(d.Prompter.(*stubPrompter).calls) != 0 {
+		t.Fatalf("pre-provisioned client should not start the wizard: calls=%v", d.Prompter.(*stubPrompter).calls)
+	}
+}
+
 func TestEnsureCredentialsRejectsBadJSON(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()

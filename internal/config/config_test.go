@@ -380,7 +380,7 @@ func TestSaveConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, line := range strings.Split(string(data), "\n") {
-			if line == "oauth_client_path: /tmp/legacy-client.json" || line == "granted_scopes:" {
+			if strings.HasPrefix(line, "oauth_client_path:") || strings.HasPrefix(line, "granted_scopes:") {
 				t.Fatalf("canonical config retained legacy top-level state:\n%s", data)
 			}
 		}

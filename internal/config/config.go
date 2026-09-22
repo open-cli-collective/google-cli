@@ -70,7 +70,7 @@ type Config struct {
 	CredentialRef string `yaml:"credential_ref" json:"credential_ref,omitempty"`
 	// OAuthClientPath is the legacy active-profile path accepted while loading
 	// older config files. Canonical saves store it under Profiles instead.
-	OAuthClientPath string `yaml:"oauth_client_path" json:"oauth_client_path,omitempty"`
+	OAuthClientPath string `yaml:"oauth_client_path,omitempty" json:"oauth_client_path,omitempty"`
 	// GrantedScopes is the legacy active-profile scope record accepted during
 	// migration. Canonical saves store it under Profiles instead.
 	GrantedScopes []string `yaml:"granted_scopes,omitempty" json:"granted_scopes,omitempty"`

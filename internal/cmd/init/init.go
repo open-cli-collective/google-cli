@@ -797,6 +797,9 @@ func ensureCredentialsForRef(d initDeps, opts *initOptions, credPath, targetRef 
 	}
 
 	if _, err := d.Stat(credPath); err == nil {
+		if targetRef != "" {
+			return associateExistingProfileClient(d, credPath, targetRef)
+		}
 		return nil
 	}
 
@@ -906,6 +909,40 @@ func ensureCredentialsForRef(d initDeps, opts *initOptions, credPath, targetRef 
 		return nil
 	}
 	return errors.New("could not obtain valid credentials.json after 3 attempts")
+}
+
+// associateExistingProfileClient heals a selected profile whose client JSON
+// was written successfully but whose config association was not (for example,
+// a prior SaveConfig failure or a pre-provisioned managed path). It validates
+// the existing bytes before recording that exact path for targetRef, and never
+// consults another profile's state.
+func associateExistingProfileClient(d initDeps, credPath, targetRef string) error {
+	cfg, err := d.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("loading profile config: %w", err)
+	}
+	state, associated, err := cfg.ProfileOAuthForRef(targetRef)
+	if err != nil {
+		return err
+	}
+	if associated && state.OAuthClientPath != "" {
+		return nil
+	}
+	blob, err := d.ReadFile(credPath)
+	if err != nil {
+		return fmt.Errorf("reading existing OAuth client JSON %s: %w", credPath, err)
+	}
+	if _, err := google.ConfigFromJSON(blob, config.Scopes()...); err != nil {
+		return fmt.Errorf("invalid OAuth client JSON at %s: %w", credPath, err)
+	}
+	state.OAuthClientPath = credPath
+	if err := cfg.SetProfileOAuth(targetRef, state); err != nil {
+		return err
+	}
+	if err := d.SaveConfig(cfg); err != nil {
+		return fmt.Errorf("saving profile OAuth client association: %w", err)
+	}
+	return nil
 }
 
 // importFromFile reads, validates, and writes credentials.json from a path.
