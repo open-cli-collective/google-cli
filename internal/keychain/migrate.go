@@ -53,18 +53,29 @@ type candidate struct {
 func migrateLegacyOverwrite(s *Store, cfg *config.Config, overwrite bool) error {
 	// Deployment material first (independent of the secret; never blocks the
 	// token path and never fails loud for a non-secret).
+	clientPathBefore := cfg.OAuthClientPathForRef(s.ref)
 	if err := migrateOAuthClientJSON(cfg, s.ref); err != nil {
 		return err
 	}
+	clientPathChanged := clientPathBefore != cfg.OAuthClientPathForRef(s.ref)
 
 	// Promote a legacy config.json to config.yml so §2.3's "read transparently
 	// once" actually holds even when there is no legacy token to migrate.
-	if err := promoteLegacyConfigJSON(cfg); err != nil {
+	promotedConfig, err := promoteLegacyConfigJSON(cfg)
+	if err != nil {
 		return err
 	}
 
 	cands := discover()
 	if len(cands) == 0 {
+		// migrateOAuthClientJSON can have associated a moved legacy client with
+		// the selected profile even when there is no legacy token. Persist that
+		// association, unless promotion already saved the same canonical config.
+		if clientPathChanged && !promotedConfig {
+			if err := config.SaveConfig(cfg); err != nil {
+				return fmt.Errorf("migration succeeded but writing config.yml failed: %w", err)
+			}
+		}
 		return nil // nothing legacy on disk/keychain — the steady state
 	}
 
@@ -457,38 +468,38 @@ func migrateOAuthClientJSON(cfg *config.Config, refs ...string) error {
 // config.yml exists the loader never reads config.json again and a second run
 // is a silent no-op. config.json is non-secret (refs/paths/ttl/scopes), so a
 // plain os.Remove is sufficient.
-func promoteLegacyConfigJSON(cfg *config.Config) error {
+func promoteLegacyConfigJSON(cfg *config.Config) (bool, error) {
 	ymlPath, err := config.GetConfigPath()
 	if err != nil {
-		return err
+		return false, err
 	}
 	switch _, serr := os.Stat(ymlPath); {
 	case serr == nil:
-		return nil // config.yml already present — nothing to promote
+		return false, nil // config.yml already present — nothing to promote
 	case !os.IsNotExist(serr):
-		return serr
+		return false, serr
 	}
 
 	jsonPath, err := config.LegacyConfigJSONPath()
 	if err != nil {
-		return err
+		return false, err
 	}
 	switch _, serr := os.Stat(jsonPath); {
 	case os.IsNotExist(serr):
-		return nil // no legacy config.json — fresh-install steady state
+		return false, nil // no legacy config.json — fresh-install steady state
 	case serr != nil:
-		return serr
+		return false, serr
 	}
 
 	if err := config.SaveConfig(cfg); err != nil {
-		return fmt.Errorf("promote legacy config.json to config.yml: %w", err)
+		return false, fmt.Errorf("promote legacy config.json to config.yml: %w", err)
 	}
 	if err := os.Remove(jsonPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove legacy config.json after promotion: %w", err)
+		return false, fmt.Errorf("remove legacy config.json after promotion: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "Migrated %s -> %s (non-secret config).\n",
 		config.ShortenPath(jsonPath), config.ShortenPath(ymlPath))
-	return nil
+	return true, nil
 }
 
 // validClientJSON reports whether data parses as a Google OAuth client

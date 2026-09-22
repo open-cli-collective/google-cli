@@ -391,3 +391,49 @@ func TestMigrateOAuthClientJSON(t *testing.T) {
 		}
 	})
 }
+
+func TestOpenMigrationPersistsProfileClientAssociationWithoutToken(t *testing.T) {
+	credtest.Setup(t)
+	dir := credtest.ConfigDir(t)
+	activeRef := "google-readonly/work"
+	configPath, err := config.GetConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("credential_ref: "+activeRef+"\n"), config.TokenPerm); err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := filepath.Join(dir, config.CredentialsFile)
+	if err := os.WriteFile(legacyPath, []byte(validClientJSONFixture), config.TokenPerm); err != nil {
+		t.Fatal(err)
+	}
+	targetPath, err := config.DefaultOAuthClientPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := Open()
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := config.LoadConfig()
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if got := loaded.OAuthClientPathForRef(activeRef); got != targetPath {
+		t.Fatalf("reloaded work client = %q, want %q", got, targetPath)
+	}
+	if got := loaded.OAuthClientPathForRef(config.DefaultCredentialRef); got != "" {
+		t.Fatalf("reloaded default client = %q, want no association", got)
+	}
+	if _, err := os.Stat(targetPath); err != nil {
+		t.Fatalf("migrated OAuth client missing at %s: %v", targetPath, err)
+	}
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy credentials.json should be removed, stat err=%v", err)
+	}
+}
