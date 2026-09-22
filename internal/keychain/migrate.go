@@ -54,7 +54,8 @@ func migrateLegacyOverwrite(s *Store, cfg *config.Config, overwrite bool) error 
 	// Deployment material first (independent of the secret; never blocks the
 	// token path and never fails loud for a non-secret).
 	clientPathBefore := cfg.OAuthClientPathForRef(s.ref)
-	if err := migrateOAuthClientJSON(cfg, s.ref); err != nil {
+	removeLegacyClient, err := migrateOAuthClientJSONDeferred(cfg, s.ref)
+	if err != nil {
 		return err
 	}
 	clientPathChanged := clientPathBefore != cfg.OAuthClientPathForRef(s.ref)
@@ -74,6 +75,11 @@ func migrateLegacyOverwrite(s *Store, cfg *config.Config, overwrite bool) error 
 		if clientPathChanged && !promotedConfig {
 			if err := config.SaveConfig(cfg); err != nil {
 				return fmt.Errorf("migration succeeded but writing config.yml failed: %w", err)
+			}
+		}
+		if removeLegacyClient != nil {
+			if err := removeLegacyClient(); err != nil {
+				return err
 			}
 		}
 		return nil // nothing legacy on disk/keychain — the steady state
@@ -111,6 +117,11 @@ func migrateLegacyOverwrite(s *Store, cfg *config.Config, overwrite bool) error 
 	}
 	if err := config.SaveConfig(cfg); err != nil {
 		return fmt.Errorf("migration succeeded but writing config.yml failed: %w", err)
+	}
+	if removeLegacyClient != nil {
+		if err := removeLegacyClient(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -371,25 +382,41 @@ func secureDelete(path string) error {
 }
 
 // migrateOAuthClientJSON relocates the legacy credentials.json (deployment
-// material, §1.2) to cfg.OAuthClientPath. Idempotent by construction: every
-// branch that proceeds deletes the legacy file, so a later run sees it absent
-// and is silent; the only non-deleting branch (both invalid) is a hard,
-// recoverable error the user must resolve, so it cannot loop unnoticed.
+// material, §1.2) to cfg.OAuthClientPath. It retains the historical immediate
+// cleanup behavior for direct callers; the Open migration path uses the
+// deferred variant below so config persistence succeeds before the legacy
+// source is removed.
 func migrateOAuthClientJSON(cfg *config.Config, refs ...string) error {
+	removeLegacy, err := migrateOAuthClientJSONDeferred(cfg, refs...)
+	if err != nil {
+		return err
+	}
+	if removeLegacy == nil {
+		return nil
+	}
+	return removeLegacy()
+}
+
+// migrateOAuthClientJSONDeferred prepares the OAuth client migration and
+// returns a cleanup that removes the legacy source. Deferring that cleanup is
+// important: if the following canonical config save fails, retaining
+// credentials.json lets the next process retry and re-associate the selected
+// profile instead of leaving only an unreferenced client file behind.
+func migrateOAuthClientJSONDeferred(cfg *config.Config, refs ...string) (func() error, error) {
 	ref := cfg.CredentialRef
 	if len(refs) > 0 && refs[0] != "" {
 		ref = refs[0]
 	}
 	if _, err := config.ProfileNameForRef(ref); err != nil {
-		return err
+		return nil, err
 	}
 	legacyPath, err := config.GetCredentialsPath()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	legacyData, lerr := os.ReadFile(legacyPath) //nolint:gosec // path from config dir
 	if lerr != nil {
-		return nil // legacy absent → nothing to do (steady state)
+		return nil, nil // legacy absent → steady state
 	}
 
 	target := cfg.OAuthClientPathForRef(ref)
@@ -401,43 +428,47 @@ func migrateOAuthClientJSON(cfg *config.Config, refs ...string) error {
 	}
 	if target == "" {
 		if target, err = config.DefaultOAuthClientPath(); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	state, _, err := cfg.ProfileOAuthForRef(ref)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if state.OAuthClientPath == "" {
 		state.OAuthClientPath = target
 	}
 	if err := cfg.SetProfileOAuth(ref, state); err != nil {
-		return err
+		return nil, err
 	}
 
 	legacyValid := validClientJSON(legacyData)
 	targetData, terr := os.ReadFile(target) //nolint:gosec // path from config dir
 	targetExists := terr == nil
 	targetValid := targetExists && validClientJSON(targetData)
+	var removeLegacy func() error
 
 	switch {
 	case filepath.Clean(target) == filepath.Clean(legacyPath):
 		// The user explicitly pointed the legacy field at this existing file.
 		// Schema migration keeps that deployment material in place.
 		if !legacyValid {
-			return fmt.Errorf("OAuth client JSON at %s is invalid", config.ShortenPath(target))
+			return nil, fmt.Errorf("OAuth client JSON at %s is invalid", config.ShortenPath(target))
 		}
 	case targetExists && targetValid:
 		// A usable client JSON is already installed; the legacy copy is
-		// redundant deployment material. Remove it (idempotence).
-		if rmErr := os.Remove(legacyPath); rmErr != nil && !os.IsNotExist(rmErr) {
-			return fmt.Errorf("remove superseded legacy credentials.json: %w", rmErr)
+		// redundant deployment material. Remove it after config persistence.
+		removeLegacy = func() error {
+			if rmErr := os.Remove(legacyPath); rmErr != nil && !os.IsNotExist(rmErr) {
+				return fmt.Errorf("remove superseded legacy credentials.json: %w", rmErr)
+			}
+			fmt.Fprintf(os.Stderr, "Removed superseded legacy credentials.json (OAuth client JSON already present at %s).\n",
+				config.ShortenPath(target))
+			return nil
 		}
-		fmt.Fprintf(os.Stderr, "Removed superseded legacy credentials.json (OAuth client JSON already present at %s).\n",
-			config.ShortenPath(target))
 	case !legacyValid && (!targetExists || !targetValid):
 		// Both unusable: do not delete anything. Loud, lossless, recoverable.
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"OAuth client JSON migration cannot proceed: legacy %s (sha256:%s) and target %s (%s) are both missing or invalid; install a valid OAuth client JSON at %s",
 			config.ShortenPath(legacyPath), fingerprint(legacyData),
 			config.ShortenPath(target), targetStateStr(targetExists, targetData),
@@ -449,17 +480,20 @@ func migrateOAuthClientJSON(cfg *config.Config, refs ...string) error {
 		// not attacker/network input. Same threat model as the G304 reads
 		// above; the OAuth client JSON is deployment material (§1.2).
 		if werr := os.WriteFile(target, legacyData, config.OutputFilePerm); werr != nil { //nolint:gosec // G703: config-derived path, user's own deployment material
-			return fmt.Errorf("write OAuth client JSON %s: %w", config.ShortenPath(target), werr)
+			return nil, fmt.Errorf("write OAuth client JSON %s: %w", config.ShortenPath(target), werr)
 		}
-		if rmErr := os.Remove(legacyPath); rmErr != nil && !os.IsNotExist(rmErr) {
-			return fmt.Errorf("remove legacy credentials.json after copy: %w", rmErr)
+		removeLegacy = func() error {
+			if rmErr := os.Remove(legacyPath); rmErr != nil && !os.IsNotExist(rmErr) {
+				return fmt.Errorf("remove legacy credentials.json after copy: %w", rmErr)
+			}
+			fmt.Fprintf(os.Stderr, "Migrated OAuth client JSON: %s -> %s (deployment material, not a secret).\n",
+				config.ShortenPath(legacyPath), config.ShortenPath(target))
+			return nil
 		}
-		fmt.Fprintf(os.Stderr, "Migrated OAuth client JSON: %s -> %s (deployment material, not a secret).\n",
-			config.ShortenPath(legacyPath), config.ShortenPath(target))
 	}
 
 	cfg.OAuthClientPath = target // compatibility for direct callers; SaveConfig canonicalizes it
-	return nil
+	return removeLegacy, nil
 }
 
 // promoteLegacyConfigJSON rewrites a legacy config.json as config.yml and
