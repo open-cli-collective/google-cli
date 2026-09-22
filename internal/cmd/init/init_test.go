@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -636,6 +637,81 @@ func TestRunWithFreshSetupSavesScopesNoTTLPrompt(t *testing.T) {
 	}
 	if len(cfgSeen) < 1 {
 		t.Fatalf("expected at least one config save (scopes), got %d", len(cfgSeen))
+	}
+}
+
+func TestRunWithWorkProfileFreshOAuthKeepsDefaultState(t *testing.T) {
+	t.Parallel()
+	fs := newFakeFS()
+	d := baseDeps(t, fs)
+	const workRef = "google-readonly/work"
+	defaultPath := filepath.Join(t.TempDir(), "default-client.json")
+	workPath := filepath.Join(t.TempDir(), "oauth_clients", "work.json")
+	defaultScopes := []string{"default-only-scope"}
+	cfgPtr := &config.Config{
+		CredentialRef: config.DefaultCredentialRef,
+		Profiles: map[string]config.ProfileConfig{
+			"default": {
+				OAuthClientPath: defaultPath,
+				GrantedScopes:   defaultScopes,
+			},
+		},
+	}
+	d.LoadConfig = func() (*config.Config, error) { return cfgPtr, nil }
+	d.SaveConfig = func(cfg *config.Config) error {
+		cfgPtr = cfg
+		return nil
+	}
+	d.DescribeTarget = func() (string, config.RefSource, string) {
+		return workRef, config.RefSourceFlag, ""
+	}
+	d.GetCredentialsPathForRef = func(ref string) (string, error) {
+		if ref != workRef {
+			t.Fatalf("credentials resolver ref = %q, want %q", ref, workRef)
+		}
+		return workPath, nil
+	}
+	d.GetOAuthConfigForRef = func(ref string) (*oauth2.Config, error) {
+		if ref != workRef {
+			t.Fatalf("OAuth resolver ref = %q, want %q", ref, workRef)
+		}
+		if got := cfgPtr.OAuthClientPathForRef(ref); got != workPath {
+			t.Fatalf("OAuth resolver saw work client %q, want %q", got, workPath)
+		}
+		return &oauth2.Config{ClientID: "work-client"}, nil
+	}
+	d.ExchangeAuthCode = func(_ context.Context, cfg *oauth2.Config, code string) (*oauth2.Token, error) {
+		if cfg.ClientID != "work-client" {
+			t.Fatalf("exchanged with client %q, want work-client", cfg.ClientID)
+		}
+		if code != "ABC" {
+			t.Fatalf("authorization code = %q, want ABC", code)
+		}
+		return &oauth2.Token{AccessToken: "work-token"}, nil
+	}
+	src := filepath.Join(t.TempDir(), "downloaded.json")
+	if err := os.WriteFile(src, []byte(validOAuthJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+	d.Prompter = &stubPrompter{redirectURL: "http://localhost/?code=ABC"}
+
+	if err := runWith(context.Background(), d, &initOptions{credentialsFile: src, noBrowser: true}); err != nil {
+		t.Fatalf("runWith: %v", err)
+	}
+	if got, err := fs.ReadFile(workPath); err != nil || string(got) != validOAuthJSON {
+		t.Fatalf("work client = %q, err=%v; want imported client JSON", got, err)
+	}
+	if got := cfgPtr.OAuthClientPathForRef(config.DefaultCredentialRef); got != defaultPath {
+		t.Fatalf("default client = %q, want unchanged %q", got, defaultPath)
+	}
+	if got := cfgPtr.GrantedScopesForRef(config.DefaultCredentialRef); !reflect.DeepEqual(got, defaultScopes) {
+		t.Fatalf("default scopes = %v, want unchanged %v", got, defaultScopes)
+	}
+	if got := cfgPtr.OAuthClientPathForRef(workRef); got != workPath {
+		t.Fatalf("work client = %q, want %q", got, workPath)
+	}
+	if got := cfgPtr.GrantedScopesForRef(workRef); !reflect.DeepEqual(got, config.Scopes()) {
+		t.Fatalf("work scopes = %v, want config.Scopes() %v", got, config.Scopes())
 	}
 }
 

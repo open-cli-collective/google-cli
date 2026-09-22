@@ -309,6 +309,30 @@ func TestMigrateOAuthClientJSON(t *testing.T) {
 		}
 	})
 
+	t.Run("records target association for a non-default active profile", func(t *testing.T) {
+		credtest.Setup(t)
+		dir := credtest.ConfigDir(t)
+		legacy := filepath.Join(dir, "credentials.json")
+		target := filepath.Join(dir, "oauth_clients", "work.json")
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(legacy, []byte(validClientJSONFixture), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		activeRef := "google-readonly/work"
+		cfg := &config.Config{CredentialRef: activeRef, OAuthClientPath: target}
+		if err := migrateOAuthClientJSON(cfg); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
+		if got := cfg.OAuthClientPathForRef(activeRef); got != target {
+			t.Fatalf("active profile client = %q, want %q", got, target)
+		}
+		if got := cfg.OAuthClientPathForRef(config.DefaultCredentialRef); got != "" {
+			t.Fatalf("default profile client = %q, want no association", got)
+		}
+	})
+
 	t.Run("target valid present: legacy removed", func(t *testing.T) {
 		credtest.Setup(t)
 		dir := credtest.ConfigDir(t)
