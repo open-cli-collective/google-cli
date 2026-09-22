@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -52,7 +53,7 @@ type candidate struct {
 func migrateLegacyOverwrite(s *Store, cfg *config.Config, overwrite bool) error {
 	// Deployment material first (independent of the secret; never blocks the
 	// token path and never fails loud for a non-secret).
-	if err := migrateOAuthClientJSON(cfg); err != nil {
+	if err := migrateOAuthClientJSON(cfg, s.ref); err != nil {
 		return err
 	}
 
@@ -363,7 +364,14 @@ func secureDelete(path string) error {
 // branch that proceeds deletes the legacy file, so a later run sees it absent
 // and is silent; the only non-deleting branch (both invalid) is a hard,
 // recoverable error the user must resolve, so it cannot loop unnoticed.
-func migrateOAuthClientJSON(cfg *config.Config) error {
+func migrateOAuthClientJSON(cfg *config.Config, refs ...string) error {
+	ref := cfg.CredentialRef
+	if len(refs) > 0 && refs[0] != "" {
+		ref = refs[0]
+	}
+	if _, err := config.ProfileNameForRef(ref); err != nil {
+		return err
+	}
 	legacyPath, err := config.GetCredentialsPath()
 	if err != nil {
 		return err
@@ -373,12 +381,27 @@ func migrateOAuthClientJSON(cfg *config.Config) error {
 		return nil // legacy absent → nothing to do (steady state)
 	}
 
-	target := config.ExpandPath(cfg.OAuthClientPath)
+	target := cfg.OAuthClientPathForRef(ref)
+	if target == "" {
+		// Direct unit callers may still construct a legacy Config by hand; keep
+		// that seam working while loaded config always has legacy state attached
+		// to the active profile by config.LoadConfig.
+		target = config.ExpandPath(cfg.OAuthClientPath)
+	}
 	if target == "" {
 		if target, err = config.DefaultOAuthClientPath(); err != nil {
 			return err
 		}
-		cfg.OAuthClientPath = target
+	}
+	state, _, err := cfg.ProfileOAuthForRef(ref)
+	if err != nil {
+		return err
+	}
+	if state.OAuthClientPath == "" {
+		state.OAuthClientPath = target
+	}
+	if err := cfg.SetProfileOAuth(ref, state); err != nil {
+		return err
 	}
 
 	legacyValid := validClientJSON(legacyData)
@@ -387,6 +410,12 @@ func migrateOAuthClientJSON(cfg *config.Config) error {
 	targetValid := targetExists && validClientJSON(targetData)
 
 	switch {
+	case filepath.Clean(target) == filepath.Clean(legacyPath):
+		// The user explicitly pointed the legacy field at this existing file.
+		// Schema migration keeps that deployment material in place.
+		if !legacyValid {
+			return fmt.Errorf("OAuth client JSON at %s is invalid", config.ShortenPath(target))
+		}
 	case targetExists && targetValid:
 		// A usable client JSON is already installed; the legacy copy is
 		// redundant deployment material. Remove it (idempotence).
@@ -418,7 +447,7 @@ func migrateOAuthClientJSON(cfg *config.Config) error {
 			config.ShortenPath(legacyPath), config.ShortenPath(target))
 	}
 
-	cfg.OAuthClientPath = target
+	cfg.OAuthClientPath = target // compatibility for direct callers; SaveConfig canonicalizes it
 	return nil
 }
 

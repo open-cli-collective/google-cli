@@ -50,6 +50,14 @@ func seedTokenAndClient(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dir, appconfig.OAuthClientFile), []byte(clientJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := appconfig.SaveConfig(&appconfig.Config{
+		CredentialRef: appconfig.DefaultCredentialRef,
+		Profiles: map[string]appconfig.ProfileConfig{
+			"default": {OAuthClientPath: filepath.Join(dir, appconfig.OAuthClientFile)},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	st, err := keychain.OpenNoMigrate()
 	if err != nil {
 		t.Fatal(err)

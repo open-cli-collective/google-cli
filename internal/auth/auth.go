@@ -57,15 +57,29 @@ func CheckScopesMigration(grantedScopes []string) string {
 	return msg
 }
 
-// GetOAuthConfig loads the OAuth client config from the deployment-material
-// OAuth client JSON referenced by config.yml's oauth_client_path (§1.2 — not
-// a secret; lives on disk, never the keyring), with all scopes.
+// GetOAuthConfig loads the OAuth client for the effective credential ref. The
+// ref is resolved without opening the keyring so all account-derived state
+// follows the same selection boundary.
 func GetOAuthConfig() (*oauth2.Config, error) {
+	ref, err := keychain.ResolveEffectiveCredentialRef()
+	if err != nil {
+		return nil, err
+	}
+	return GetOAuthConfigForRef(ref)
+}
+
+// GetOAuthConfigForRef loads the exact profile-owned OAuth client JSON for
+// ref. An unconfigured profile is a hard miss; it never falls back to the
+// active profile's client or scopes.
+func GetOAuthConfigForRef(ref string) (*oauth2.Config, error) {
 	cfg, err := config.LoadConfigForRuntime()
 	if err != nil {
 		return nil, err
 	}
-	path := config.ExpandPath(cfg.OAuthClientPath)
+	path := cfg.OAuthClientPathForRef(ref)
+	if path == "" {
+		return nil, fmt.Errorf("no OAuth client configured for credential %s (run '%s init --profile %s --credentials-file <path>' or import a client for this profile)", ref, config.ProductName(), profileName(ref))
+	}
 	b, err := os.ReadFile(path) //nolint:gosec // deployment-material path from config
 	if err != nil {
 		return nil, fmt.Errorf("unable to read OAuth client JSON %s (run '%s init'): %w",
@@ -106,7 +120,9 @@ func GetHTTPClientForRef(ctx context.Context, ref string) (*http.Client, error) 
 // lifetime). Shared by the active-ref and explicit-ref entry points so the
 // persist-on-refresh and error-attribution behavior can't diverge.
 func clientFromStore(ctx context.Context, st *keychain.Store) (*http.Client, error) {
-	oauthCfg, err := GetOAuthConfig()
+	ref := st.Ref()
+	refSource := st.RefSource()
+	oauthCfg, err := GetOAuthConfigForRef(ref)
 	if err != nil {
 		_ = st.Close()
 		return nil, err
@@ -118,8 +134,6 @@ func clientFromStore(ctx context.Context, st *keychain.Store) (*http.Client, err
 		return nil, fmt.Errorf("no OAuth token stored for credential %s (selected via %s) - run '%s init' first: %w",
 			st.Ref(), keychain.DescribeRefSource(st.RefSource()), config.ProductName(), err)
 	}
-	ref := st.Ref()
-	refSource := st.RefSource()
 	_ = st.Close() // do not hold the Store for the client's lifetime
 
 	persist := func(t *oauth2.Token) error {
@@ -133,6 +147,14 @@ func clientFromStore(ctx context.Context, st *keychain.Store) (*http.Client, err
 
 	tokenSource := keychain.NewPersistentTokenSource(ctx, oauthCfg, tok, persist)
 	return oauth2.NewClient(ctx, &attributedTokenSource{base: tokenSource, ref: ref, source: refSource}), nil
+}
+
+func profileName(ref string) string {
+	_, profile, ok := strings.Cut(ref, "/")
+	if !ok {
+		return ref
+	}
+	return profile
 }
 
 // attributedTokenSource decorates auth failures from the wrapped source with

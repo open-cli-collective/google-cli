@@ -129,6 +129,23 @@ func effectiveRef(configRef string) (ref string, source config.RefSource, overri
 	return configRef, "", false
 }
 
+// ResolveEffectiveCredentialRef applies the same flag > environment > config
+// precedence used by Open without opening the keyring or migrating anything.
+// Account-derived state (OAuth clients, scopes, and caches) uses this resolver
+// so it cannot accidentally follow the active config while a command targets a
+// different profile.
+func ResolveEffectiveCredentialRef() (string, error) {
+	cfg, err := config.LoadConfigForRuntime()
+	if err != nil {
+		return "", err
+	}
+	ref, _, _ := effectiveRef(cfg.CredentialRef)
+	if _, _, err := credstore.ParseRef(ref); err != nil {
+		return "", fmt.Errorf("invalid credential_ref %q: %w", ref, err)
+	}
+	return ref, nil
+}
+
 // OpenRef opens a store against an explicit ref instead of config.yml's
 // credential_ref — used by the refresh
 // persister. An empty ref falls back to the configured/default ref.

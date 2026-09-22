@@ -289,6 +289,49 @@ func TestEnsureCredentialsFlagFile(t *testing.T) {
 	}
 }
 
+func TestEnsureCredentialsProfileFileBindsOnlySelectedProfile(t *testing.T) {
+	t.Parallel()
+	fs := newFakeFS()
+	d := baseDeps(t, fs)
+	const ref = "google-readonly/work"
+	activePath := filepath.Join(t.TempDir(), "default.json")
+	profilePath := filepath.Join(t.TempDir(), "oauth_clients", "work.json")
+	cfgPtr := &config.Config{
+		CredentialRef: config.DefaultCredentialRef,
+		Profiles: map[string]config.ProfileConfig{
+			"default": {OAuthClientPath: activePath},
+		},
+	}
+	d.LoadConfig = func() (*config.Config, error) { return cfgPtr, nil }
+	d.SaveConfig = func(cfg *config.Config) error { cfgPtr = cfg; return nil }
+	d.GetCredentialsPathForRef = func(got string) (string, error) {
+		if got != ref {
+			t.Fatalf("credentials resolver ref = %q, want %q", got, ref)
+		}
+		return profilePath, nil
+	}
+	src := filepath.Join(t.TempDir(), "work-client.json")
+	if err := os.WriteFile(src, []byte(validOAuthJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+	d.Prompter = &stubPrompter{}
+	if err := ensureCredentialsForRef(d, &initOptions{credentialsFile: src}, profilePath, ref); err != nil {
+		t.Fatalf("ensureCredentialsForRef: %v", err)
+	}
+	if _, err := fs.ReadFile(profilePath); err != nil {
+		t.Fatalf("selected profile client was not written: %v", err)
+	}
+	if got := cfgPtr.OAuthClientPathForRef(ref); got != profilePath {
+		t.Fatalf("selected profile client = %q, want %q", got, profilePath)
+	}
+	if got := cfgPtr.OAuthClientPathForRef(config.DefaultCredentialRef); got != activePath {
+		t.Fatalf("active profile client = %q, want %q", got, activePath)
+	}
+	if len(cfgPtr.Profiles) != 2 {
+		t.Fatalf("profiles after import = %v, want active plus selected", cfgPtr.Profiles)
+	}
+}
+
 func TestEnsureCredentialsRejectsBadJSON(t *testing.T) {
 	t.Parallel()
 	fs := newFakeFS()

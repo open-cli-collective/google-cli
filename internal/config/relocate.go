@@ -206,13 +206,78 @@ func configsMaterialEqual(a, b Config, oldDir, newDir string) bool {
 	if !reflect.DeepEqual(a.Keyring, b.Keyring) {
 		return false
 	}
-	if !slicesEqualSorted(a.GrantedScopes, b.GrantedScopes) {
+	return profileConfigsMaterialEqual(a, b, oldDir, newDir)
+}
+
+// profileConfigsMaterialEqual compares canonical profile-owned state while
+// treating legacy top-level fields as belonging only to each config's active
+// profile. This keeps relocation compatible with the one-time schema upgrade
+// without allowing one profile's values to mask another's divergence.
+func profileConfigsMaterialEqual(a, b Config, oldDir, newDir string) bool {
+	if legacyProfileConflict(a) || legacyProfileConflict(b) {
 		return false
 	}
-	if !oauthClientPathEquiv(a.OAuthClientPath, b.OAuthClientPath, oldDir, newDir) {
+	left := canonicalProfiles(a)
+	right := canonicalProfiles(b)
+	if len(left) != len(right) {
 		return false
+	}
+	for profile, aState := range left {
+		bState, ok := right[profile]
+		if !ok || !slicesEqualSorted(aState.GrantedScopes, bState.GrantedScopes) {
+			return false
+		}
+		if !profileOAuthClientPathEquiv(profile, aState.OAuthClientPath, bState.OAuthClientPath, oldDir, newDir) {
+			return false
+		}
 	}
 	return true
+}
+
+func legacyProfileConflict(c Config) bool {
+	if c.CredentialRef == "" {
+		return false
+	}
+	profile, err := ProfileNameForRef(c.CredentialRef)
+	if err != nil {
+		return true
+	}
+	state, ok := c.Profiles[profile]
+	if !ok {
+		return false
+	}
+	if c.OAuthClientPath != "" && state.OAuthClientPath != "" &&
+		!oauthClientPathEquivalent(c.OAuthClientPath, state.OAuthClientPath) {
+		return true
+	}
+	return c.GrantedScopes != nil && state.GrantedScopes != nil &&
+		!slicesEqualSorted(c.GrantedScopes, state.GrantedScopes)
+}
+
+func canonicalProfiles(c Config) map[string]ProfileConfig {
+	out := cloneProfiles(c.Profiles)
+	if c.CredentialRef == "" {
+		return out
+	}
+	profile, err := ProfileNameForRef(c.CredentialRef)
+	if err != nil {
+		return out
+	}
+	if c.OAuthClientPath == "" && c.GrantedScopes == nil {
+		return out
+	}
+	if out == nil {
+		out = make(map[string]ProfileConfig)
+	}
+	state := out[profile]
+	if state.OAuthClientPath == "" {
+		state.OAuthClientPath = c.OAuthClientPath
+	}
+	if state.GrantedScopes == nil && c.GrantedScopes != nil {
+		state.GrantedScopes = append([]string(nil), c.GrantedScopes...)
+	}
+	out[profile] = state
+	return out
 }
 
 // oauthClientPathEquiv treats "both empty", "both equal to their own dir's
@@ -233,6 +298,16 @@ func oauthClientPathEquiv(aPath, bPath, aDir, bDir string) bool {
 	aIsDefault := aPath == "" || aPath == filepath.Join(aDir, OAuthClientFile)
 	bIsDefault := bPath == "" || bPath == filepath.Join(bDir, OAuthClientFile)
 	return aIsDefault && bIsDefault
+}
+
+func profileOAuthClientPathEquiv(profile, aPath, bPath, aDir, bDir string) bool {
+	if oauthClientPathEquiv(aPath, bPath, aDir, bDir) {
+		return true
+	}
+	aPath = ExpandPath(aPath)
+	bPath = ExpandPath(bPath)
+	return aPath == filepath.Join(aDir, "oauth_clients", profile+".json") &&
+		bPath == filepath.Join(bDir, "oauth_clients", profile+".json")
 }
 
 func slicesEqualSorted(a, b []string) bool {
@@ -269,6 +344,11 @@ func ApplyConfigRelocation(r SharedRelocation) error {
 	}
 	for _, e := range entries {
 		if e.IsDir() {
+			if e.Name() == "oauth_clients" {
+				if err := copyOAuthClients(filepath.Join(r.OldPath, e.Name()), filepath.Join(r.NewPath, e.Name())); err != nil {
+					return fmt.Errorf("copying OAuth client directory: %w", err)
+				}
+			}
 			continue // pre-B2b cache subdir etc.; not part of config relocation
 		}
 		if e.Name() == TokenFile {
@@ -281,6 +361,30 @@ func ApplyConfigRelocation(r SharedRelocation) error {
 		src := filepath.Join(r.OldPath, e.Name())
 		if err := copyFileAtomic(src, dst); err != nil {
 			return fmt.Errorf("copying %s → %s: %w", src, dst, err)
+		}
+	}
+	return nil
+}
+
+func copyOAuthClients(srcDir, dstDir string) error {
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dstDir, DirPerm); err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		src := filepath.Join(srcDir, entry.Name())
+		dst := filepath.Join(dstDir, entry.Name())
+		if fileExists(dst) {
+			continue
+		}
+		if err := copyFileAtomic(src, dst); err != nil {
+			return err
 		}
 	}
 	return nil
