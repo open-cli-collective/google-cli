@@ -979,3 +979,17 @@ func TestDraftCommand_ReplyTo_RejectsHeaderInjection(t *testing.T) {
 		testutil.Contains(t, err.Error(), "CR or LF")
 	})
 }
+
+func TestRenderMarkdown_SingleNewlineIsALineBreak(t *testing.T) {
+	out, err := renderMarkdown([]byte("Hi Sam,\n\nThanks,\nAlex"))
+	if err != nil {
+		t.Fatalf("renderMarkdown: %v", err)
+	}
+	got := string(out)
+	if !strings.Contains(got, "Thanks,<br>\nAlex") && !strings.Contains(got, "Thanks,<br />\nAlex") {
+		t.Errorf("sign-off lines were joined: %q", got)
+	}
+	if strings.Count(got, "<p>") != 2 {
+		t.Errorf("blank line should still separate paragraphs: %q", got)
+	}
+}
