@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
+	gmhtml "github.com/yuin/goldmark/renderer/html"
 	xhtml "golang.org/x/net/html"
 
 	gmailapi "github.com/open-cli-collective/google-cli/internal/api/gmail"
@@ -616,6 +617,9 @@ func renderMarkdown(src []byte) ([]byte, error) {
 			extension.Strikethrough,
 			extension.TaskList,
 		),
+		// A newline in an email body is a line break to its author (a two-line
+		// sign-off, an address), not a CommonMark soft break that joins lines.
+		goldmark.WithRendererOptions(gmhtml.WithHardWraps()),
 	)
 	var buf bytes.Buffer
 	if err := md.Convert(src, &buf); err != nil {
