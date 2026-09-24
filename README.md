@@ -67,7 +67,7 @@ grw contacts create --given-name Test --email t@example.com --dry-run
 grw drive trash --query "name contains 'old'" --dry-run
 ```
 
-One desktop OAuth client can be used by both tools, but each tool asks for consent and stores its token under its own identity. Google Workspace administrators should start with [`WORKSPACE_ADMINS.md`](WORKSPACE_ADMINS.md).
+Each `--profile` selects one complete account context: its token, OAuth client JSON, granted scopes, and Drive metadata cache. `init --profile work --credentials-file client.json` binds that client to `work`; an unconfigured profile never falls back to another profile's client or cache. The same desktop OAuth client may be reused by both tools for the same profile, but each tool still asks for consent and stores its token under its own identity. Google Workspace administrators should start with [`WORKSPACE_ADMINS.md`](WORKSPACE_ADMINS.md).
 
 ## Documentation
 

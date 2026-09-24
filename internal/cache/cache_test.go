@@ -9,6 +9,7 @@ import (
 	"github.com/open-cli-collective/cli-common/statedirtest"
 
 	"github.com/open-cli-collective/google-cli/internal/config"
+	"github.com/open-cli-collective/google-cli/internal/keychain"
 	"github.com/open-cli-collective/google-cli/internal/testutil"
 )
 
@@ -67,6 +68,31 @@ func TestCache_GetSetDrives(t *testing.T) {
 		testutil.Equal(t, drives[1].ID, "drive2")
 		testutil.Equal(t, drives[1].Name, "Marketing")
 	})
+}
+
+func TestCacheIsolatedBySelectedProfile(t *testing.T) {
+	hermetic(t)
+	keychain.SetCredentialRefOverride("google-readonly/default", true)
+	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
+	defaultCache, err := New()
+	testutil.NoError(t, err)
+	testutil.NoError(t, defaultCache.SetDrives([]*CachedDrive{{ID: "default", Name: "Default"}}))
+
+	keychain.SetCredentialRefOverride("google-readonly/work", true)
+	workCache, err := New()
+	testutil.NoError(t, err)
+	got, err := workCache.GetDrives()
+	testutil.NoError(t, err)
+	testutil.Nil(t, got)
+	testutil.NoError(t, workCache.SetDrives([]*CachedDrive{{ID: "work", Name: "Work"}}))
+
+	keychain.SetCredentialRefOverride("google-readonly/default", true)
+	got, err = defaultCache.GetDrives()
+	testutil.NoError(t, err)
+	testutil.Len(t, got, 1)
+	testutil.Equal(t, got[0].ID, "default")
+	defaultCache.Clear()
+	workCache.Clear()
 }
 
 func TestCache_Expiration(t *testing.T) {
@@ -233,109 +259,22 @@ func TestCache_GetDir(t *testing.T) {
 	testutil.Equal(t, c.GetDir(), want)
 }
 
-func TestMigrateLegacyCacheDir(t *testing.T) {
-	setup := func(t *testing.T) (legacy, newDir string) {
-		t.Helper()
-		hermetic(t)
-		legacy, err := config.LegacyCacheDir()
-		testutil.NoError(t, err)
-		newDir, err = config.CacheDirPath()
-		testutil.NoError(t, err)
-		return legacy, newDir
-	}
-	seedLegacy := func(t *testing.T, legacy, payload string) {
-		t.Helper()
-		testutil.NoError(t, os.MkdirAll(legacy, 0o700))
-		testutil.NoError(t, os.WriteFile(filepath.Join(legacy, DrivesFile), []byte(payload), 0o600))
-	}
+func TestLegacyCacheIsDisposable(t *testing.T) {
+	hermetic(t)
+	legacy, err := config.LegacyCacheDir()
+	testutil.NoError(t, err)
+	testutil.NoError(t, os.MkdirAll(legacy, 0o700))
+	testutil.NoError(t, os.WriteFile(filepath.Join(legacy, DrivesFile),
+		[]byte(`{"drives":[{"id":"old","name":"Stale"}]}`), 0o600))
 
-	t.Run("carries warm cache then removes legacy", func(t *testing.T) {
-		legacy, newDir := setup(t)
-		seedLegacy(t, legacy, `{"cached_at":"2026-01-01T00:00:00Z","ttl_hours":24,"drives":[{"id":"d1","name":"Eng"}]}`)
-
-		c, err := New()
-		testutil.NoError(t, err)
-		defer c.Clear()
-
-		got, err := os.ReadFile(filepath.Join(newDir, c.loc.InstanceKey, DrivesFile))
-		testutil.NoError(t, err)
-		testutil.Contains(t, string(got), `"d1"`)
-		_, statErr := os.Stat(legacy)
-		testutil.True(t, os.IsNotExist(statErr))
-
-		// Idempotent: a second New is a no-op and keeps the new cache.
-		c2, err := New()
-		testutil.NoError(t, err)
-		defer c2.Clear()
-		_, err = os.Stat(filepath.Join(newDir, c.loc.InstanceKey, DrivesFile))
-		testutil.NoError(t, err)
-	})
-
-	t.Run("does not overwrite an existing new cache; still removes legacy", func(t *testing.T) {
-		legacy, _ := setup(t)
-		c, err := New()
-		testutil.NoError(t, err)
-		defer c.Clear()
-		testutil.NoError(t, c.SetDrives([]*CachedDrive{{ID: "new", Name: "Keep"}}))
-		seedLegacy(t, legacy, `{"drives":[{"id":"old","name":"Stale"}]}`)
-
-		c2, err := New()
-		testutil.NoError(t, err)
-		defer c2.Clear()
-
-		drives, err := c2.GetDrives()
-		testutil.NoError(t, err)
-		testutil.Len(t, drives, 1)
-		testutil.Equal(t, drives[0].ID, "new")
-		_, statErr := os.Stat(legacy)
-		testutil.True(t, os.IsNotExist(statErr))
-	})
-
-	t.Run("unreadable legacy drives file: legacy preserved, no partial carry", func(t *testing.T) {
-		legacy, newDir := setup(t)
-		// drives.json as a directory => os.ReadFile errors with a
-		// non-IsNotExist error => carry fails => legacy must NOT be removed
-		// and nothing must be written into the new cache.
-		testutil.NoError(t, os.MkdirAll(filepath.Join(legacy, DrivesFile), 0o700))
-
-		c, err := New()
-		testutil.NoError(t, err)
-		defer c.Clear()
-
-		_, statErr := os.Stat(legacy)
-		testutil.NoError(t, statErr)
-		_, newErr := os.Stat(filepath.Join(newDir, c.loc.InstanceKey, DrivesFile))
-		testutil.True(t, os.IsNotExist(newErr))
-	})
-
-	t.Run("no legacy is a clean no-op", func(t *testing.T) {
-		setup(t)
-		c, err := New()
-		testutil.NoError(t, err)
-		defer c.Clear()
-	})
-
-	t.Run("old-hand-rolled legacy cache subdir is carried (pre-MON-5371 install)", func(t *testing.T) {
-		hermetic(t)
-		oldLegacy, err := config.OldHandRolledLegacyCacheDir()
-		testutil.NoError(t, err)
-		newDir, err := config.CacheDirPath()
-		testutil.NoError(t, err)
-		// On Linux this is the same path as LegacyCacheDir — dedup handles it.
-		// On macOS/Windows this is the path a pure pre-MON-5371 install lived
-		// at and is what the dual-probe needs to find.
-		testutil.NoError(t, os.MkdirAll(oldLegacy, 0o700))
-		testutil.NoError(t, os.WriteFile(filepath.Join(oldLegacy, DrivesFile),
-			[]byte(`{"cached_at":"2026-01-01T00:00:00Z","ttl_hours":24,"drives":[{"id":"hand","name":"R"}]}`), 0o600))
-
-		c, err := New()
-		testutil.NoError(t, err)
-		defer c.Clear()
-
-		got, err := os.ReadFile(filepath.Join(newDir, c.loc.InstanceKey, DrivesFile))
-		testutil.NoError(t, err)
-		testutil.Contains(t, string(got), `"hand"`)
-		_, statErr := os.Stat(oldLegacy)
-		testutil.True(t, os.IsNotExist(statErr))
-	})
+	c, err := New()
+	testutil.NoError(t, err)
+	defer c.Clear()
+	got, err := c.GetDrives()
+	testutil.NoError(t, err)
+	testutil.Nil(t, got)
+	// The old unscoped cache is neither guessed into this profile nor removed
+	// by normal cache construction; config clear --all owns broad cleanup.
+	_, statErr := os.Stat(filepath.Join(legacy, DrivesFile))
+	testutil.NoError(t, statErr)
 }

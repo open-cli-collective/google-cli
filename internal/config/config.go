@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/open-cli-collective/cli-common/credstore"
 	"github.com/open-cli-collective/cli-common/statedir"
 	"gopkg.in/yaml.v3"
 )
@@ -67,13 +68,16 @@ type Config struct {
 	// CredentialRef is the authoritative <service>/<profile> keyring ref
 	// (§1.3). Resolved via credstore.ParseRef; never hard-coded.
 	CredentialRef string `yaml:"credential_ref" json:"credential_ref,omitempty"`
-	// OAuthClientPath is the absolute path to the OAuth client JSON
-	// (deployment material). Stored expanded + absolute; `~` is display-only
-	// via ShortenPath. An org may override the default location here.
-	OAuthClientPath string `yaml:"oauth_client_path" json:"oauth_client_path,omitempty"`
-	// GrantedScopes is preserved: detects when a token's scopes drift from
-	// what init granted. Not a secret.
+	// OAuthClientPath is the legacy active-profile path accepted while loading
+	// older config files. Canonical saves store it under Profiles instead.
+	OAuthClientPath string `yaml:"oauth_client_path,omitempty" json:"oauth_client_path,omitempty"`
+	// GrantedScopes is the legacy active-profile scope record accepted during
+	// migration. Canonical saves store it under Profiles instead.
 	GrantedScopes []string `yaml:"granted_scopes,omitempty" json:"granted_scopes,omitempty"`
+	// Profiles stores OAuth client JSON paths and granted scopes by bare,
+	// validated credential profile name. The legacy top-level fields above are
+	// accepted on load and normalized into the configured active profile.
+	Profiles map[string]ProfileConfig `yaml:"profiles,omitempty" json:"profiles,omitempty"`
 	// Keyring carries the optional §1.4 explicit file-backend opt-in.
 	Keyring KeyringConfig `yaml:"keyring,omitempty" json:"-"`
 
@@ -83,6 +87,101 @@ type Config struct {
 	// never serialized: it is provenance for error attribution and `config
 	// show`, not configuration.
 	credentialRefSource RefSource
+}
+
+// ProfileConfig is the non-secret state owned by one bare credential profile.
+// Access tokens remain in the keyring under the corresponding full ref.
+type ProfileConfig struct {
+	OAuthClientPath string   `yaml:"oauth_client_path,omitempty" json:"oauth_client_path,omitempty"`
+	GrantedScopes   []string `yaml:"granted_scopes,omitempty" json:"granted_scopes,omitempty"`
+}
+
+// ProfileNameForRef validates a full credential ref and returns its bare
+// profile name. Config state is keyed by this name, never by a service-
+// qualified ref, so the same profile name can be used by gro and grw.
+func ProfileNameForRef(ref string) (string, error) {
+	_, profile, err := credstore.ParseRef(ref)
+	if err != nil {
+		return "", fmt.Errorf("invalid credential ref %q: %w", ref, err)
+	}
+	return profile, nil
+}
+
+// ProfileOAuthForRef returns the exact profile-owned state for ref. It never
+// falls back to legacy top-level fields or another profile.
+func (c *Config) ProfileOAuthForRef(ref string) (ProfileConfig, bool, error) {
+	if c == nil {
+		return ProfileConfig{}, false, nil
+	}
+	profile, err := ProfileNameForRef(ref)
+	if err != nil {
+		return ProfileConfig{}, false, err
+	}
+	state, ok := c.Profiles[profile]
+	if !ok {
+		return ProfileConfig{}, false, nil
+	}
+	state.OAuthClientPath = ExpandPath(state.OAuthClientPath)
+	state.GrantedScopes = append([]string(nil), state.GrantedScopes...)
+	return state, true, nil
+}
+
+// OAuthClientPathForRef returns the selected profile's client path, or an
+// empty string when that profile has no owned client.
+func (c *Config) OAuthClientPathForRef(ref string) string {
+	state, ok, err := c.ProfileOAuthForRef(ref)
+	if err != nil || !ok {
+		return ""
+	}
+	return state.OAuthClientPath
+}
+
+// GrantedScopesForRef returns only the selected profile's recorded scopes.
+// An unconfigured profile returns nil, even when legacy top-level scopes exist
+// for the active profile.
+func (c *Config) GrantedScopesForRef(ref string) []string {
+	state, ok, err := c.ProfileOAuthForRef(ref)
+	if err != nil || !ok {
+		return nil
+	}
+	return state.GrantedScopes
+}
+
+// SetProfileOAuth stores exact profile-owned state after validating the bare
+// profile name from ref. Paths are expanded before persistence.
+func (c *Config) SetProfileOAuth(ref string, state ProfileConfig) error {
+	profile, err := ProfileNameForRef(ref)
+	if err != nil {
+		return err
+	}
+	if c.Profiles == nil {
+		c.Profiles = make(map[string]ProfileConfig)
+	}
+	state.OAuthClientPath = ExpandPath(state.OAuthClientPath)
+	state.GrantedScopes = append([]string(nil), state.GrantedScopes...)
+	c.Profiles[profile] = state
+	return nil
+}
+
+// ProfileOAuthClientPath returns the managed path for a new profile. The
+// caller still needs to import/validate the JSON before associating it.
+func ProfileOAuthClientPath(profile string) (string, error) {
+	if _, err := credstore.FormatRef(serviceName(), profile); err != nil {
+		return "", fmt.Errorf("invalid profile %q: %w", profile, err)
+	}
+	dir, err := GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "oauth_clients", profile+".json"), nil
+}
+
+func serviceName() string {
+	service, _, err := credstore.ParseRef(DefaultCredentialRef)
+	if err != nil {
+		return ""
+	}
+	return service
 }
 
 // RefSource identifies where the resolved CredentialRef came from, so auth
@@ -354,7 +453,9 @@ func LoadConfig() (*Config, error) {
 		return nil, relErr
 	}
 
-	cfg.applyDefaults()
+	if err := cfg.applyDefaults(); err != nil {
+		return nil, err
+	}
 	return cfg, relErr
 }
 
@@ -378,20 +479,88 @@ func loadLegacyJSON(cfg *Config) error {
 	return nil
 }
 
-func (c *Config) applyDefaults() {
+func (c *Config) applyDefaults() error {
 	if c.CredentialRef == "" {
 		c.CredentialRef = DefaultCredentialRef
 		c.credentialRefSource = RefSourceDefault
 	} else {
 		c.credentialRefSource = RefSourceConfig
 	}
-	if c.OAuthClientPath == "" {
-		if p, err := DefaultOAuthClientPath(); err == nil {
-			c.OAuthClientPath = p
+
+	// Validate and normalize profile-owned state first. A malformed profile key
+	// must fail closed instead of silently becoming another account's state.
+	for profile, state := range c.Profiles {
+		if _, err := credstore.FormatRef(serviceName(), profile); err != nil {
+			return fmt.Errorf("invalid profile %q in config: %w", profile, err)
 		}
-	} else {
+		state.OAuthClientPath = ExpandPath(state.OAuthClientPath)
+		state.GrantedScopes = append([]string(nil), state.GrantedScopes...)
+		c.Profiles[profile] = state
+	}
+
+	// Legacy top-level client/scopes are attached only to the configured active
+	// profile. A new profile never inherits them. Divergent mixed state fails
+	// loudly so a save cannot silently discard user-authored values.
+	active, err := ProfileNameForRef(c.CredentialRef)
+	if err != nil {
+		return err
+	}
+	legacy := ProfileConfig{
+		OAuthClientPath: ExpandPath(c.OAuthClientPath),
+		GrantedScopes:   append([]string(nil), c.GrantedScopes...),
+	}
+	if legacy.OAuthClientPath != "" || c.GrantedScopes != nil {
+		state, ok := c.Profiles[active]
+		if ok {
+			if legacy.OAuthClientPath != "" && state.OAuthClientPath != "" &&
+				!oauthClientPathEquivalent(legacy.OAuthClientPath, state.OAuthClientPath) {
+				return fmt.Errorf("profile %q has divergent legacy and profile OAuth client paths", active)
+			}
+			if c.GrantedScopes != nil && state.GrantedScopes != nil &&
+				!scopesEqual(legacy.GrantedScopes, state.GrantedScopes) {
+				return fmt.Errorf("profile %q has divergent legacy and profile granted scopes", active)
+			}
+			if state.OAuthClientPath == "" {
+				state.OAuthClientPath = legacy.OAuthClientPath
+			}
+			if state.GrantedScopes == nil && c.GrantedScopes != nil {
+				state.GrantedScopes = append([]string(nil), c.GrantedScopes...)
+			}
+			c.Profiles[active] = state
+		} else {
+			if c.Profiles == nil {
+				c.Profiles = make(map[string]ProfileConfig)
+			}
+			c.Profiles[active] = legacy
+		}
+	}
+	if c.OAuthClientPath != "" {
 		c.OAuthClientPath = ExpandPath(c.OAuthClientPath)
 	}
+	return nil
+}
+
+func oauthClientPathEquivalent(a, b string) bool {
+	return ExpandPath(a) == ExpandPath(b)
+}
+
+func scopesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, s := range a {
+		seen[s]++
+	}
+	for _, s := range b {
+		seen[s]--
+	}
+	for _, n := range seen {
+		if n != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // SaveConfig writes config.yml at 0600 under a 0700 directory using an atomic
@@ -409,9 +578,50 @@ func SaveConfig(cfg *Config) error {
 	// caller's *Config (a caller inspecting OAuthClientPath after SaveConfig
 	// would otherwise observe an unexpectedly rewritten value).
 	out := *cfg
-	if out.OAuthClientPath != "" {
-		out.OAuthClientPath = ExpandPath(out.OAuthClientPath)
+	out.Profiles = cloneProfiles(cfg.Profiles)
+	for profile := range out.Profiles {
+		if _, perr := credstore.FormatRef(serviceName(), profile); perr != nil {
+			return fmt.Errorf("invalid profile %q in config: %w", profile, perr)
+		}
 	}
+	if out.CredentialRef == "" {
+		out.CredentialRef = DefaultCredentialRef
+	}
+	if profile, perr := ProfileNameForRef(out.CredentialRef); perr == nil {
+		legacy := ProfileConfig{
+			OAuthClientPath: ExpandPath(out.OAuthClientPath),
+			GrantedScopes:   append([]string(nil), out.GrantedScopes...),
+		}
+		if legacy.OAuthClientPath != "" || out.GrantedScopes != nil {
+			state, ok := out.Profiles[profile]
+			if !ok {
+				if out.Profiles == nil {
+					out.Profiles = make(map[string]ProfileConfig)
+				}
+				out.Profiles[profile] = legacy
+			} else {
+				if legacy.OAuthClientPath != "" && state.OAuthClientPath != "" &&
+					!oauthClientPathEquivalent(legacy.OAuthClientPath, state.OAuthClientPath) {
+					return fmt.Errorf("profile %q has divergent legacy and profile OAuth client paths", profile)
+				}
+				if out.GrantedScopes != nil && state.GrantedScopes != nil &&
+					!scopesEqual(out.GrantedScopes, state.GrantedScopes) {
+					return fmt.Errorf("profile %q has divergent legacy and profile granted scopes", profile)
+				}
+				if state.OAuthClientPath == "" {
+					state.OAuthClientPath = legacy.OAuthClientPath
+				}
+				if state.GrantedScopes == nil && out.GrantedScopes != nil {
+					state.GrantedScopes = append([]string(nil), out.GrantedScopes...)
+				}
+				out.Profiles[profile] = state
+			}
+		}
+	}
+	// Legacy fields are load-time compatibility only. Persist canonical
+	// profile-owned state so the next save cannot reintroduce a global fallback.
+	out.OAuthClientPath = ""
+	out.GrantedScopes = nil
 	data, err := yaml.Marshal(&out)
 	if err != nil {
 		return err
@@ -441,4 +651,17 @@ func SaveConfig(cfg *Config) error {
 		return fmt.Errorf("finalizing config file: %w", err)
 	}
 	return nil
+}
+
+func cloneProfiles(in map[string]ProfileConfig) map[string]ProfileConfig {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]ProfileConfig, len(in))
+	for profile, state := range in {
+		state.OAuthClientPath = ExpandPath(state.OAuthClientPath)
+		state.GrantedScopes = append([]string(nil), state.GrantedScopes...)
+		out[profile] = state
+	}
+	return out
 }

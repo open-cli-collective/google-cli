@@ -276,6 +276,58 @@ func TestRelocate_OAuthClientPath_ExplicitNonDefaultDivergence_FailsLoud(t *test
 	}
 }
 
+func TestRelocate_ProfileOwnedOAuthState(t *testing.T) {
+	oldDir, newDir := reloctest(t)
+	for _, d := range []string{oldDir, newDir} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldCfg := "credential_ref: google-readonly/work\nprofiles:\n  default:\n    oauth_client_path: " + filepath.Join(oldDir, "oauth_clients", "default.json") + "\n    granted_scopes:\n      - default-scope\n  work:\n    oauth_client_path: " + filepath.Join(oldDir, "oauth_clients", "work.json") + "\n    granted_scopes:\n      - work-scope\n"
+	newCfg := "credential_ref: google-readonly/work\nprofiles:\n  default:\n    oauth_client_path: " + filepath.Join(newDir, "oauth_clients", "default.json") + "\n    granted_scopes:\n      - default-scope\n  work:\n    oauth_client_path: " + filepath.Join(newDir, "oauth_clients", "work.json") + "\n    granted_scopes:\n      - work-scope\n"
+	if err := os.WriteFile(filepath.Join(oldDir, ConfigFileYAML), []byte(oldCfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newDir, ConfigFileYAML), []byte(newCfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := detectAt(t, oldDir, newDir)
+	if err != nil || r.Kind != relocBothEqual {
+		t.Fatalf("profile maps should compare equal across relocated dirs: kind=%v err=%v", r.Kind, err)
+	}
+
+	divergent := strings.Replace(newCfg, "- work-scope", "- other-scope", 1)
+	if err := os.WriteFile(filepath.Join(newDir, ConfigFileYAML), []byte(divergent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := detectAt(t, oldDir, newDir); !errors.Is(err, ErrRelocationConflict) {
+		t.Fatalf("profile scope divergence must fail loud, got %v", err)
+	}
+}
+
+func TestApplyConfigRelocation_CopiesProfileOAuthClients(t *testing.T) {
+	oldDir, newDir := reloctest(t)
+	if err := os.MkdirAll(filepath.Join(oldDir, "oauth_clients"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldDir, ConfigFileYAML), []byte("credential_ref: google-readonly/work\nprofiles:\n  work:\n    oauth_client_path: "+filepath.Join(oldDir, "oauth_clients", "work.json")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldDir, "oauth_clients", "work.json"), []byte("client"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := detectAt(t, oldDir, newDir)
+	if err != nil || !r.CopyNeeded {
+		t.Fatalf("old-only profile state should request relocation: copy=%v err=%v", r.CopyNeeded, err)
+	}
+	if err := ApplyConfigRelocation(r); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(newDir, "oauth_clients", "work.json")); err != nil {
+		t.Fatalf("profile OAuth client was not copied: %v", err)
+	}
+}
+
 func TestRelocate_OldOnlyConfigJSON_TriggersCopy(t *testing.T) {
 	// A pre-MON-5371 install on macOS may have only legacy config.json (not
 	// yet promoted to config.yml). Detection must still classify as

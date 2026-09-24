@@ -73,7 +73,7 @@ The write `NewCommand()` starts with `internal/cmd/<domain>.NewCommand()` and at
 
 `cmd/grw/main.go` registers `internal/app/grw.Identity()` before running the `grw` root. That root composes setup/configuration and profile commands with the extended Gmail, Calendar, Contacts, and Drive commands.
 
-Both identities drive the same config, cache, credential-reference, and keyring code. They use different directory names, default credential references, environment-variable prefixes, and keyring namespaces. Their OAuth client JSON may be reused across identities, but tokens and consent remain separate. `gro` requests its non-destructive multi-service scopes; `grw` requests Gmail write scopes, Calendar, Contacts, and Drive read/write scopes, and basic profile access.
+Both identities drive the same config, cache, credential-reference, and keyring code. They use different directory names, default credential references, environment-variable prefixes, and keyring namespaces. Each bare profile owns its OAuth client JSON, granted scopes, token, and Drive cache; a client JSON may be reused across identities only for the same profile, while tokens and consent remain separate. `gro` requests its non-destructive multi-service scopes; `grw` requests Gmail write scopes, Calendar, Contacts, and Drive read/write scopes, and basic profile access.
 
 ## Structural enforcement
 

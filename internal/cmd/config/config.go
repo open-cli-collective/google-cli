@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -125,17 +126,18 @@ The OAuth client JSON (deployment material) is never removed.`,
 // showStatus is the §1.6 non-secret view: never the token value, not even a
 // masked prefix.
 type showStatus struct {
-	CredentialRef          string `json:"credential_ref"`
-	CredentialRefSource    string `json:"credential_ref_source,omitempty"`
-	Backend                string `json:"backend"`
-	BackendSource          string `json:"backend_source"`
-	KeyringBackend         string `json:"keyring_backend,omitempty"` // selector from config.yml (keyring.backend)
-	PassphraseSource       string `json:"passphrase_source,omitempty"`
-	OAuthTokenPresent      bool   `json:"oauth_token_present"`
-	OAuthClientPath        string `json:"oauth_client_path"`
-	OAuthClientPresent     bool   `json:"oauth_client_present"`
-	OAuthClientFingerprint string `json:"oauth_client_fingerprint,omitempty"`
-	OAuthClientContents    string `json:"oauth_client_contents,omitempty"`
+	CredentialRef          string   `json:"credential_ref"`
+	CredentialRefSource    string   `json:"credential_ref_source,omitempty"`
+	Backend                string   `json:"backend"`
+	BackendSource          string   `json:"backend_source"`
+	KeyringBackend         string   `json:"keyring_backend,omitempty"` // selector from config.yml (keyring.backend)
+	PassphraseSource       string   `json:"passphrase_source,omitempty"`
+	OAuthTokenPresent      bool     `json:"oauth_token_present"`
+	OAuthClientPath        string   `json:"oauth_client_path"`
+	OAuthClientPresent     bool     `json:"oauth_client_present"`
+	OAuthClientFingerprint string   `json:"oauth_client_fingerprint,omitempty"`
+	OAuthClientContents    string   `json:"oauth_client_contents,omitempty"`
+	GrantedScopes          []string `json:"granted_scopes,omitempty"`
 }
 
 func runShow(jsonOut, verbose bool) error {
@@ -158,6 +160,7 @@ func runShow(jsonOut, verbose bool) error {
 		return err
 	}
 	backend, src := st.Backend()
+	clientPath := cfg.OAuthClientPathForRef(st.Ref())
 	status := showStatus{
 		CredentialRef:       st.Ref(),
 		CredentialRefSource: string(st.RefSource()),
@@ -165,17 +168,20 @@ func runShow(jsonOut, verbose bool) error {
 		BackendSource:       string(src),
 		KeyringBackend:      cfg.Keyring.Backend, // selector value from config.yml; "" if unset
 		OAuthTokenPresent:   hasTok,
-		OAuthClientPath:     config.ShortenPath(cfg.OAuthClientPath),
+		OAuthClientPath:     config.ShortenPath(clientPath),
 		OAuthClientPresent:  false,
+		GrantedScopes:       cfg.GrantedScopesForRef(st.Ref()),
 	}
 	if backend == credstore.BackendFile {
 		status.PassphraseSource = keychain.PassphraseSource(st.Service())
 	}
-	if data, rerr := os.ReadFile(cfg.OAuthClientPath); rerr == nil { //nolint:gosec // deployment-material path
-		status.OAuthClientPresent = true
-		status.OAuthClientFingerprint = "sha256:" + fileFingerprint(data)
-		if verbose {
-			status.OAuthClientContents = redactClientJSON(data)
+	if clientPath != "" {
+		if data, rerr := os.ReadFile(clientPath); rerr == nil { //nolint:gosec // deployment-material path
+			status.OAuthClientPresent = true
+			status.OAuthClientFingerprint = "sha256:" + fileFingerprint(data)
+			if verbose {
+				status.OAuthClientContents = redactClientJSON(data)
+			}
 		}
 	}
 
@@ -192,6 +198,9 @@ func runShow(jsonOut, verbose bool) error {
 		fmt.Printf("Passphrase:          %s\n", status.PassphraseSource)
 	}
 	fmt.Printf("OAuth token:         %s\n", presence(status.OAuthTokenPresent))
+	if len(status.GrantedScopes) > 0 {
+		fmt.Printf("Granted scopes:      %s\n", strings.Join(status.GrantedScopes, ", "))
+	}
 	fmt.Printf("OAuth client JSON:   %s\n", status.OAuthClientPath)
 	if status.OAuthClientPresent {
 		fmt.Printf("  present, %s\n", status.OAuthClientFingerprint)

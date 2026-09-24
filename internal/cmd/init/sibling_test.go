@@ -31,6 +31,30 @@ func TestEnsureCredentials_ReusesSiblingOAuthClient(t *testing.T) {
 	}
 }
 
+func TestEnsureCredentials_ReusesSiblingOAuthClientForSelectedProfile(t *testing.T) {
+	fs := newFakeFS()
+	d := baseDeps(t, fs)
+	credPath := filepath.Join(t.TempDir(), "oauth_clients", "work.json")
+	siblingPath := filepath.Join(t.TempDir(), "sibling-work.json")
+	fs.files[siblingPath] = []byte(validOAuthJSON)
+	var selected string
+	d.Prompter = &stubPrompter{}
+	d.DiscoverSiblingClientJSONForProfile = func(profile string) (string, string, bool) {
+		selected = profile
+		return siblingPath, "google-readonly", true
+	}
+
+	if err := ensureCredentialsForRef(d, &initOptions{}, credPath, "google-readonly/work"); err != nil {
+		t.Fatalf("ensureCredentialsForRef: %v", err)
+	}
+	if selected != "work" {
+		t.Fatalf("sibling profile = %q, want work", selected)
+	}
+	if _, ok := fs.files[credPath]; !ok {
+		t.Fatal("expected the selected profile's sibling OAuth client to be written")
+	}
+}
+
 // TestEnsureCredentials_NoSiblingFallsThroughToWizard proves the discovery does
 // not hijack the normal path: with no sibling, the wizard still runs.
 func TestEnsureCredentials_NoSiblingFallsThroughToWizard(t *testing.T) {

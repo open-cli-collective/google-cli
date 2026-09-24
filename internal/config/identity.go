@@ -1,10 +1,13 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 
+	"github.com/open-cli-collective/cli-common/credstore"
 	"github.com/open-cli-collective/cli-common/statedir"
+	"gopkg.in/yaml.v3"
 )
 
 // Identity carries the per-CLI values that were previously compile-time
@@ -83,17 +86,74 @@ func Register(id Identity) {
 // the first sibling whose oauth_client.json exists, along with that sibling's
 // DirName. ok is false when no sibling has one.
 func SiblingOAuthClientPath() (path, siblingDirName string, ok bool) {
+	return SiblingOAuthClientPathForProfile("default")
+}
+
+// SiblingOAuthClientPathForProfile finds an OAuth client explicitly owned by
+// the same bare profile in a sibling CLI. Legacy top-level client state is
+// eligible only when that sibling's configured active profile matches profile;
+// another sibling profile is never a fallback.
+func SiblingOAuthClientPathForProfile(profile string) (path, siblingDirName string, ok bool) {
+	if profile == "" {
+		profile = "default"
+	}
 	for _, name := range siblingDirNames {
 		dir, err := (statedir.Scope{Name: name}).ConfigDir()
 		if err != nil {
 			continue
 		}
-		p := filepath.Join(dir, OAuthClientFile)
-		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+		if p, found := siblingProfileClient(dir, profile); found {
 			return p, name, true
 		}
 	}
 	return "", "", false
+}
+
+func siblingProfileClient(dir, profile string) (string, bool) {
+	path := filepath.Join(dir, ConfigFileYAML)
+	data, err := os.ReadFile(path) //nolint:gosec // sibling config path is resolved from registered identity
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return "", false
+		}
+		// A fresh/legacy sibling with no config can only represent its default
+		// profile, and only at the historical shared client path.
+		if profile != "default" {
+			return "", false
+		}
+		p := filepath.Join(dir, OAuthClientFile)
+		info, serr := os.Stat(p)
+		return p, serr == nil && !info.IsDir()
+	}
+
+	var raw struct {
+		CredentialRef   string                   `yaml:"credential_ref" json:"credential_ref"`
+		OAuthClientPath string                   `yaml:"oauth_client_path" json:"oauth_client_path"`
+		Profiles        map[string]ProfileConfig `yaml:"profiles" json:"profiles"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return "", false
+		}
+	}
+	if state, ok := raw.Profiles[profile]; ok && state.OAuthClientPath != "" {
+		p := ExpandPath(state.OAuthClientPath)
+		if info, serr := os.Stat(p); serr == nil && !info.IsDir() {
+			return p, true
+		}
+	}
+	active := "default"
+	if raw.CredentialRef != "" {
+		if _, p, perr := credstore.ParseRef(raw.CredentialRef); perr == nil {
+			active = p
+		}
+	}
+	if active != profile || raw.OAuthClientPath == "" {
+		return "", false
+	}
+	p := ExpandPath(raw.OAuthClientPath)
+	info, serr := os.Stat(p)
+	return p, serr == nil && !info.IsDir()
 }
 
 // RegisterForTest registers a canonical identity for internal package tests

@@ -243,6 +243,60 @@ func TestLoadConfig(t *testing.T) {
 	})
 }
 
+func TestLegacyOAuthStateAttachesOnlyToActiveProfile(t *testing.T) {
+	hermeticConfig(t)
+	dir, err := GetConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := "credential_ref: google-readonly/default\n" +
+		"oauth_client_path: /tmp/legacy-client.json\n" +
+		"granted_scopes:\n  - legacy-scope\n" +
+		"profiles:\n" +
+		"  work:\n" +
+		"    oauth_client_path: /tmp/work-client.json\n" +
+		"    granted_scopes:\n" +
+		"      - work-scope\n"
+	if err := os.WriteFile(filepath.Join(dir, ConfigFileYAML), []byte(data), TokenPerm); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.OAuthClientPathForRef("google-readonly/default"); got != "/tmp/legacy-client.json" {
+		t.Fatalf("active client = %q, want legacy client", got)
+	}
+	if got := cfg.OAuthClientPathForRef("google-readonly/work"); got != "/tmp/work-client.json" {
+		t.Fatalf("work client = %q, want work client", got)
+	}
+	if got := cfg.OAuthClientPathForRef("google-readonly/other"); got != "" {
+		t.Fatalf("unconfigured client = %q, want no fallback", got)
+	}
+	if got := cfg.GrantedScopesForRef("google-readonly/work"); len(got) != 1 || got[0] != "work-scope" {
+		t.Fatalf("work scopes = %v, want [work-scope]", got)
+	}
+}
+
+func TestMixedLegacyAndProfileOAuthStateDivergesLoudly(t *testing.T) {
+	hermeticConfig(t)
+	dir, err := GetConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := "credential_ref: google-readonly/default\n" +
+		"oauth_client_path: /tmp/legacy-client.json\n" +
+		"profiles:\n" +
+		"  default:\n" +
+		"    oauth_client_path: /tmp/new-client.json\n"
+	if err := os.WriteFile(filepath.Join(dir, ConfigFileYAML), []byte(data), TokenPerm); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "divergent") {
+		t.Fatalf("LoadConfig error = %v, want divergent mixed-state error", err)
+	}
+}
+
 func TestSaveConfig(t *testing.T) {
 	t.Run("saves config to file", func(t *testing.T) {
 		hermeticConfig(t)
@@ -310,6 +364,43 @@ func TestSaveConfig(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("writes profile state without legacy top-level fallback", func(t *testing.T) {
+		hermeticConfig(t)
+		cfg := &Config{
+			CredentialRef:   DefaultCredentialRef,
+			OAuthClientPath: "/tmp/legacy-client.json",
+			GrantedScopes:   []string{"scope-a"},
+		}
+		if err := SaveConfig(cfg); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(filepath.Join(mustConfigDir(t), ConfigFileYAML))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "oauth_client_path:") || strings.HasPrefix(line, "granted_scopes:") {
+				t.Fatalf("canonical config retained legacy top-level state:\n%s", data)
+			}
+		}
+		loaded, err := LoadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := loaded.OAuthClientPathForRef(DefaultCredentialRef); got != "/tmp/legacy-client.json" {
+			t.Fatalf("canonical profile client = %q", got)
+		}
+	})
+}
+
+func mustConfigDir(t *testing.T) string {
+	t.Helper()
+	dir, err := GetConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func TestCacheDirResolvers(t *testing.T) {

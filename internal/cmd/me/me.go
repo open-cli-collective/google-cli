@@ -14,6 +14,7 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/api/people"
 	"github.com/open-cli-collective/google-cli/internal/auth"
 	"github.com/open-cli-collective/google-cli/internal/config"
+	"github.com/open-cli-collective/google-cli/internal/keychain"
 )
 
 // errReauth is the well-known error returned when the user must re-run `gro init`.
@@ -64,9 +65,11 @@ Data comes from the People API people/me endpoint.`,
 func run(ctx context.Context, out, errOut io.Writer, idOnly, extended bool) error {
 	// Loud-and-early stale-scope check (only fires when scopes were recorded).
 	if cfg, err := config.LoadConfigForRuntime(); err == nil {
-		if msg := auth.CheckScopesMigration(cfg.GrantedScopes); msg != "" {
-			_, _ = fmt.Fprintln(errOut, msg)
-			return errReauth
+		if ref, rerr := keychain.ResolveEffectiveCredentialRef(); rerr == nil {
+			if msg := auth.CheckScopesMigration(cfg.GrantedScopesForRef(ref)); msg != "" {
+				_, _ = fmt.Fprintln(errOut, msg)
+				return errReauth
+			}
 		}
 	}
 
@@ -134,5 +137,9 @@ func grantedScopes() []string {
 	if err != nil {
 		return nil
 	}
-	return cfg.GrantedScopes
+	ref, err := keychain.ResolveEffectiveCredentialRef()
+	if err != nil {
+		return nil
+	}
+	return cfg.GrantedScopesForRef(ref)
 }

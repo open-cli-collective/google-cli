@@ -13,6 +13,7 @@ import (
 
 	"github.com/open-cli-collective/google-cli/internal/api/people"
 	"github.com/open-cli-collective/google-cli/internal/config"
+	"github.com/open-cli-collective/google-cli/internal/keychain"
 )
 
 // mockPeopleClient is a stub for the exported PeopleClient interface.
@@ -394,6 +395,72 @@ func TestRunStaleRecordedScopesTriggersReauthMessage(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "gro init") {
 		t.Errorf("expected 'gro init' guidance in stderr, got %q", errOut.String())
+	}
+}
+
+func TestRunProfileUsesSelectedScopeRecordBeforeClientCreation(t *testing.T) {
+	// Not Parallel: mutates env + ClientFactory + the --profile selection seam.
+	withConfigDir(t)
+	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
+	if err := config.SaveConfig(&config.Config{
+		CredentialRef: config.DefaultCredentialRef,
+		Profiles: map[string]config.ProfileConfig{
+			"default": {GrantedScopes: config.Scopes()},
+			"work":    {GrantedScopes: []string{"work-only-scope"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	keychain.SetCredentialRefOverride("google-readonly/work", true)
+	origClientFactory := ClientFactory
+	ClientFactory = func(context.Context) (PeopleClient, error) {
+		t.Fatal("People client must not be created when the selected profile scopes are stale")
+		return nil, nil
+	}
+	t.Cleanup(func() { ClientFactory = origClientFactory })
+
+	var out, errOut bytes.Buffer
+	err := run(context.Background(), &out, &errOut, false, false)
+	if !errors.Is(err, errReauth) {
+		t.Fatalf("expected errReauth for stale work scopes, got %v", err)
+	}
+	if !strings.Contains(errOut.String(), "gro init") {
+		t.Fatalf("expected re-auth guidance, got %q", errOut.String())
+	}
+}
+
+func TestRunProfileExtendedRendersSelectedScopes(t *testing.T) {
+	// Not Parallel: mutates env + ClientFactory + the --profile selection seam.
+	withConfigDir(t)
+	t.Cleanup(func() { keychain.SetCredentialRefOverride("", false) })
+	defaultScopes := append(config.Scopes(), "default-only-scope")
+	workScopes := append(config.Scopes(), "work-only-scope")
+	if err := config.SaveConfig(&config.Config{
+		CredentialRef: config.DefaultCredentialRef,
+		Profiles: map[string]config.ProfileConfig{
+			"default": {GrantedScopes: defaultScopes},
+			"work":    {GrantedScopes: workScopes},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	keychain.SetCredentialRefOverride("google-readonly/work", true)
+	withMockClient(t, &mockPeopleClient{
+		GetMeFunc: func(_ context.Context) (*people.Profile, error) {
+			return &people.Profile{ResourceName: "people/c1", DisplayName: "Ada", PrimaryEmail: "ada@example.com"}, nil
+		},
+	})
+
+	var out bytes.Buffer
+	if err := run(context.Background(), &out, &bytes.Buffer{}, false, true); err != nil {
+		t.Fatalf("run --profile work --extended: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "work-only-scope") {
+		t.Fatalf("extended output must include work scopes, got %q", got)
+	}
+	if strings.Contains(got, "default-only-scope") {
+		t.Fatalf("extended output must not include default scopes, got %q", got)
 	}
 }
 

@@ -92,14 +92,16 @@ type initDeps struct {
 	// JSON path (deployment material, not a secret) to reuse, plus that
 	// sibling's name, if any. Enables seamless setup: `grw init` adopts gro's
 	// OAuth client without a second paste. Injected so tests can stub it.
-	DiscoverSiblingClientJSON func() (path, sibling string, ok bool)
+	DiscoverSiblingClientJSON           func() (path, sibling string, ok bool)
+	DiscoverSiblingClientJSONForProfile func(profile string) (path, sibling string, ok bool)
 
 	// FS abstraction so tests can use a temp dir without env shenanigans.
-	GetCredentialsPath func() (string, error)
-	ReadFile           func(path string) ([]byte, error)
-	WriteFile          func(path string, data []byte, perm os.FileMode) error
-	Chmod              func(path string, perm os.FileMode) error
-	Stat               func(path string) (os.FileInfo, error)
+	GetCredentialsPath       func() (string, error)
+	GetCredentialsPathForRef func(ref string) (string, error)
+	ReadFile                 func(path string) ([]byte, error)
+	WriteFile                func(path string, data []byte, perm os.FileMode) error
+	Chmod                    func(path string, perm os.FileMode) error
+	Stat                     func(path string) (os.FileInfo, error)
 
 	// Clipboard. Supported is checked first; ReadAll only called if Supported.
 	ClipboardSupported func() bool
@@ -142,8 +144,9 @@ type initDeps struct {
 	StdinReadAll func() (string, error)
 
 	// OAuth.
-	ExchangeAuthCode func(ctx context.Context, cfg *oauth2.Config, code string) (*oauth2.Token, error)
-	GetOAuthConfig   func() (*oauth2.Config, error)
+	ExchangeAuthCode     func(ctx context.Context, cfg *oauth2.Config, code string) (*oauth2.Token, error)
+	GetOAuthConfig       func() (*oauth2.Config, error)
+	GetOAuthConfigForRef func(ref string) (*oauth2.Config, error)
 
 	// API verifiers (one Gmail, one People). Both used during init.
 	GmailVerify func(ctx context.Context) (string, error) // returns email
@@ -176,8 +179,10 @@ type prompter interface {
 // defaultDeps wires up production collaborators.
 func defaultDeps() initDeps {
 	return initDeps{
-		View:                      view.New(),
-		DiscoverSiblingClientJSON: config.SiblingOAuthClientPath,
+		View: view.New(),
+		DiscoverSiblingClientJSONForProfile: func(profile string) (string, string, bool) {
+			return config.SiblingOAuthClientPathForProfile(profile)
+		},
 		// The OAuth client JSON is deployment material (§1.2): the wizard
 		// writes it to oauth_client_path, not the legacy credentials.json.
 		GetCredentialsPath: func() (string, error) {
@@ -186,6 +191,21 @@ func defaultDeps() initDeps {
 				return "", err
 			}
 			return config.ExpandPath(cfg.OAuthClientPath), nil
+		},
+		GetCredentialsPathForRef: func(ref string) (string, error) {
+			cfg, err := config.LoadConfigForRuntime()
+			if err != nil {
+				return "", err
+			}
+			path := cfg.OAuthClientPathForRef(ref)
+			if path != "" {
+				return path, nil
+			}
+			profile, err := config.ProfileNameForRef(ref)
+			if err != nil {
+				return "", err
+			}
+			return config.ProfileOAuthClientPath(profile)
 		},
 		ReadFile:               os.ReadFile,
 		WriteFile:              os.WriteFile,
@@ -206,6 +226,7 @@ func defaultDeps() initDeps {
 		StdinReadAll:           readAllStdin,
 		ExchangeAuthCode:       auth.ExchangeAuthCode,
 		GetOAuthConfig:         auth.GetOAuthConfig,
+		GetOAuthConfigForRef:   auth.GetOAuthConfigForRef,
 		GmailVerify: func(ctx context.Context) (string, error) {
 			c, err := gmail.NewClient(ctx)
 			if err != nil {
@@ -418,18 +439,18 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 		target = "the active profile"
 	}
 
-	credPath, err := d.GetCredentialsPath()
+	credPath, err := credentialsPathForRef(d, targetRef)
 	if err != nil {
 		return fmt.Errorf("getting credentials path: %w", err)
 	}
 
 	// Step 1: ensure credentials.json exists.
-	if err := ensureCredentials(d, opts, credPath); err != nil {
+	if err := ensureCredentialsForRef(d, opts, credPath, targetRef); err != nil {
 		return err
 	}
 
 	// Step 3: token resolution.
-	handled, err := tryExistingToken(ctx, d, opts, target)
+	handled, err := tryExistingTokenForRef(ctx, d, opts, target, targetRef)
 	if err != nil {
 		return err
 	}
@@ -438,7 +459,7 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 	}
 
 	// Step 4: OAuth flow.
-	oauthCfg, err := d.GetOAuthConfig()
+	oauthCfg, err := oauthConfigForRef(d, targetRef)
 	if err != nil {
 		return fmt.Errorf("loading OAuth config: %w", err)
 	}
@@ -490,14 +511,26 @@ func runWith(ctx context.Context, d initDeps, opts *initOptions) error {
 		d.View.Success("Token saved to %s", d.GetStorageBackend())
 	}
 
-	// Step 5: persist granted scopes (creates config.json if missing).
+	// Step 5: persist the selected profile's granted scopes (creates config.yml
+	// if missing).
 	cfg, cfgErr := d.LoadConfig()
 	if cfgErr != nil {
-		cfg = &config.Config{}
-	}
-	cfg.GrantedScopes = config.Scopes()
-	if saveErr := d.SaveConfig(cfg); saveErr != nil {
-		d.View.Error("Warning: saving granted scopes: %v", saveErr)
+		d.View.Error("Warning: loading config to save granted scopes: %v", cfgErr)
+	} else {
+		if targetRef != "" {
+			clientPath := cfg.OAuthClientPathForRef(targetRef)
+			if clientPath == "" {
+				clientPath = credPath
+			}
+			if err := cfg.SetProfileOAuth(targetRef, config.ProfileConfig{OAuthClientPath: clientPath, GrantedScopes: config.Scopes()}); err != nil {
+				d.View.Error("Warning: saving granted scopes: %v", err)
+			}
+		} else {
+			cfg.GrantedScopes = config.Scopes()
+		}
+		if saveErr := d.SaveConfig(cfg); saveErr != nil {
+			d.View.Error("Warning: saving granted scopes: %v", saveErr)
+		}
 	}
 
 	// Step 7: verify the token works. Gmail is verified for every CLI built on
@@ -610,15 +643,7 @@ func apisForScopes(scopes []string) []string {
 	return apis
 }
 
-// tryExistingToken handles the case where a token is already stored.
-// Returns (handled=true, nil) if init is done; (handled=false, nil) if the
-// caller should fall through to the OAuth flow; (_, err) on errors.
-//
-// This is the load-bearing piece for #107's stale-scope fix: a Gmail-valid
-// but People-insufficient token (typical of users who upgraded gro) must
-// trigger re-auth here, otherwise `gro me`'s "run gro init" message
-// produces an infinite remediation loop.
-func tryExistingToken(ctx context.Context, d initDeps, opts *initOptions, target string) (bool, error) {
+func tryExistingTokenForRef(ctx context.Context, d initDeps, opts *initOptions, target, targetRef string) (bool, error) {
 	if !d.HasStoredToken() {
 		return false, nil
 	}
@@ -627,7 +652,11 @@ func tryExistingToken(ctx context.Context, d initDeps, opts *initOptions, target
 	// regardless of --no-verify because letting --no-verify skip it would
 	// re-open the same remediation loop #107 is trying to close.
 	if cfg, err := d.LoadConfig(); err == nil {
-		if msg := auth.CheckScopesMigration(cfg.GrantedScopes); msg != "" {
+		granted := cfg.GrantedScopes
+		if targetRef != "" {
+			granted = cfg.GrantedScopesForRef(targetRef)
+		}
+		if msg := auth.CheckScopesMigration(granted); msg != "" {
 			d.View.Error("Recorded scopes are stale.")
 			d.View.Println(msg)
 			if err := promptAndDeleteForReauth(d, opts, target); err != nil {
@@ -727,19 +756,50 @@ func finishExisting(d initDeps, profile *people.Profile) error {
 	return nil
 }
 
-// ensureCredentials makes sure credentials.json exists at credPath, populating
-// it from --credentials-file or the interactive wizard if needed.
+func credentialsPathForRef(d initDeps, ref string) (string, error) {
+	if d.GetCredentialsPathForRef != nil {
+		return d.GetCredentialsPathForRef(ref)
+	}
+	if d.GetCredentialsPath == nil {
+		return "", errors.New("OAuth client path resolver is unavailable")
+	}
+	return d.GetCredentialsPath()
+}
+
+func oauthConfigForRef(d initDeps, ref string) (*oauth2.Config, error) {
+	if d.GetOAuthConfigForRef != nil {
+		return d.GetOAuthConfigForRef(ref)
+	}
+	if d.GetOAuthConfig == nil {
+		return nil, errors.New("OAuth client resolver is unavailable")
+	}
+	return d.GetOAuthConfig()
+}
+
+// ensureCredentials keeps the old three-argument test seam for callers that
+// already resolved a path. Production uses ensureCredentialsForRef so imports
+// are associated with the exact selected profile.
 func ensureCredentials(d initDeps, opts *initOptions, credPath string) error {
+	return ensureCredentialsForRef(d, opts, credPath, "")
+}
+
+// ensureCredentialsForRef makes sure an OAuth client exists for targetRef,
+// populating a profile-managed path from --credentials-file or the interactive
+// wizard if needed.
+func ensureCredentialsForRef(d initDeps, opts *initOptions, credPath, targetRef string) error {
 	// --credentials-file flag wins.
 	if opts.credentialsFile != "" {
 		expanded, err := expandTilde(opts.credentialsFile)
 		if err != nil {
 			return err
 		}
-		return importFromFile(d, expanded, credPath)
+		return importProfileFromFile(d, expanded, targetRef, credPath)
 	}
 
 	if _, err := d.Stat(credPath); err == nil {
+		if targetRef != "" {
+			return associateExistingProfileClient(d, credPath, targetRef)
+		}
 		return nil
 	}
 
@@ -747,7 +807,18 @@ func ensureCredentials(d initDeps, opts *initOptions, credPath string) error {
 	// it (deployment material, not a secret) so the user need not paste it a
 	// second time. Only the OAuth *client* is shared here — each CLI still runs
 	// its own consent and stores its own token in its own keyring namespace.
-	if d.DiscoverSiblingClientJSON != nil {
+	profile := "default"
+	if targetRef != "" {
+		if p, err := config.ProfileNameForRef(targetRef); err == nil {
+			profile = p
+		}
+	}
+	if d.DiscoverSiblingClientJSONForProfile != nil {
+		if srcPath, sibling, ok := d.DiscoverSiblingClientJSONForProfile(profile); ok {
+			d.View.Info("Reusing the OAuth client from %s - no need to paste it again.", sibling)
+			return importProfileFromFile(d, srcPath, targetRef, credPath)
+		}
+	} else if d.DiscoverSiblingClientJSON != nil && profile == "default" {
 		if srcPath, sibling, ok := d.DiscoverSiblingClientJSON(); ok {
 			d.View.Info("Reusing the OAuth client from %s - no need to paste it again.", sibling)
 			return importFromFile(d, srcPath, credPath)
@@ -825,7 +896,12 @@ func ensureCredentials(d initDeps, opts *initOptions, credPath string) error {
 			return fmt.Errorf("unknown choice: %s", choice)
 		}
 
-		if err := writeCredentials(d, credPath, blob); err != nil {
+		if targetRef != "" {
+			if err := importProfileJSON(d, blob, targetRef, credPath); err != nil {
+				d.View.Error("%v", err)
+				continue
+			}
+		} else if err := writeCredentials(d, credPath, blob); err != nil {
 			d.View.Error("%v", err)
 			continue
 		}
@@ -835,6 +911,40 @@ func ensureCredentials(d initDeps, opts *initOptions, credPath string) error {
 	return errors.New("could not obtain valid credentials.json after 3 attempts")
 }
 
+// associateExistingProfileClient heals a selected profile whose client JSON
+// was written successfully but whose config association was not (for example,
+// a prior SaveConfig failure or a pre-provisioned managed path). It validates
+// the existing bytes before recording that exact path for targetRef, and never
+// consults another profile's state.
+func associateExistingProfileClient(d initDeps, credPath, targetRef string) error {
+	cfg, err := d.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("loading profile config: %w", err)
+	}
+	state, associated, err := cfg.ProfileOAuthForRef(targetRef)
+	if err != nil {
+		return err
+	}
+	if associated && state.OAuthClientPath != "" {
+		return nil
+	}
+	blob, err := d.ReadFile(credPath)
+	if err != nil {
+		return fmt.Errorf("reading existing OAuth client JSON %s: %w", credPath, err)
+	}
+	if _, err := google.ConfigFromJSON(blob, config.Scopes()...); err != nil {
+		return fmt.Errorf("invalid OAuth client JSON at %s: %w", credPath, err)
+	}
+	state.OAuthClientPath = credPath
+	if err := cfg.SetProfileOAuth(targetRef, state); err != nil {
+		return err
+	}
+	if err := d.SaveConfig(cfg); err != nil {
+		return fmt.Errorf("saving profile OAuth client association: %w", err)
+	}
+	return nil
+}
+
 // importFromFile reads, validates, and writes credentials.json from a path.
 func importFromFile(d initDeps, srcPath, dstPath string) error {
 	blob, err := d.ReadFile(srcPath)
@@ -842,6 +952,79 @@ func importFromFile(d initDeps, srcPath, dstPath string) error {
 		return fmt.Errorf("reading %s: %w", srcPath, err)
 	}
 	return writeCredentials(d, dstPath, blob)
+}
+
+func importProfileFromFile(d initDeps, srcPath, targetRef, fallbackPath string) error {
+	blob, err := d.ReadFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", srcPath, err)
+	}
+	return importProfileJSON(d, blob, targetRef, fallbackPath)
+}
+
+// importProfileJSON validates an OAuth client and associates it with exactly
+// targetRef. A selected profile never writes the active profile's client path.
+func importProfileJSON(d initDeps, blob []byte, targetRef, fallbackPath string) error {
+	imported, err := google.ConfigFromJSON(blob, config.Scopes()...)
+	if err != nil {
+		return fmt.Errorf("invalid OAuth client JSON: %w", err)
+	}
+	if targetRef == "" {
+		return writeCredentials(d, fallbackPath, blob)
+	}
+
+	cfg, err := d.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("loading profile config: %w", err)
+	}
+	path := cfg.OAuthClientPathForRef(targetRef)
+	if path == "" {
+		path = fallbackPath
+	}
+	if path == "" {
+		profile, perr := config.ProfileNameForRef(targetRef)
+		if perr != nil {
+			return perr
+		}
+		if d.GetCredentialsPathForRef != nil {
+			path, err = d.GetCredentialsPathForRef(targetRef)
+		} else {
+			path, err = config.ProfileOAuthClientPath(profile)
+		}
+		if err != nil {
+			return fmt.Errorf("creating profile OAuth client path: %w", err)
+		}
+	}
+
+	// A stored token is tied to the OAuth app. Refuse a different client ID
+	// rather than creating a token/client mismatch that fails later.
+	if d.HasStoredToken != nil && d.HasStoredToken() {
+		var current *oauth2.Config
+		if d.GetOAuthConfigForRef != nil {
+			current, err = d.GetOAuthConfigForRef(targetRef)
+		} else if d.GetOAuthConfig != nil {
+			current, err = d.GetOAuthConfig()
+		}
+		if err == nil && current != nil && current.ClientID != "" && current.ClientID != imported.ClientID {
+			return fmt.Errorf("profile %s already has a token for a different OAuth client; clear that profile or use another profile", targetRef)
+		}
+	}
+	if err := writeCredentials(d, path, blob); err != nil {
+		return err
+	}
+	state, _, err := cfg.ProfileOAuthForRef(targetRef)
+	if err != nil {
+		return err
+	}
+	state.OAuthClientPath = path
+	if err := cfg.SetProfileOAuth(targetRef, state); err != nil {
+		return err
+	}
+	if err := d.SaveConfig(cfg); err != nil {
+		return fmt.Errorf("saving profile OAuth client association: %w", err)
+	}
+	d.View.Success("OAuth client JSON saved for %s", targetRef)
+	return nil
 }
 
 // writeCredentials validates blob as OAuth client JSON and writes it to dst at

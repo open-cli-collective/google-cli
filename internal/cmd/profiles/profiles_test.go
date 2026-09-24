@@ -188,7 +188,9 @@ func TestRunList_Check(t *testing.T) {
 	seedToken(t, "work")
 	seedToken(t, "broken")
 
+	seen := map[string]int{}
 	withVerify(t, func(_ context.Context, ref string) (string, error) {
+		seen[ref]++
 		switch ref {
 		case "google-readonly/default":
 			return "", &oauth2.RetrieveError{
@@ -216,6 +218,11 @@ func TestRunList_Check(t *testing.T) {
 	}
 	if strings.Contains(out, "second line noise") {
 		t.Errorf("multi-line error leaked past firstLine:\n%s", out)
+	}
+	for _, ref := range []string{"google-readonly/default", "google-readonly/work", "google-readonly/broken"} {
+		if seen[ref] != 1 {
+			t.Errorf("--check verified %q %d times, want exactly once", ref, seen[ref])
+		}
 	}
 	// Healthy check must refresh the identity cache.
 	if got := identitycache.Load()["work"].Email; got != "work@example.com" {
