@@ -1,22 +1,21 @@
 $ErrorActionPreference = 'Stop'
 
-$version = $env:ChocolateyPackageVersion
 $toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
+$urlAmd64 = 'URL_AMD64_PLACEHOLDER'
+$urlArm64 = 'URL_ARM64_PLACEHOLDER'
 $checksumAmd64 = 'CHECKSUM_AMD64_PLACEHOLDER'
 $checksumArm64 = 'CHECKSUM_ARM64_PLACEHOLDER'
 
 if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
-    $arch = 'arm64'
+    $url = $urlArm64
     $checksum = $checksumArm64
 } elseif ([Environment]::Is64BitOperatingSystem) {
-    $arch = 'amd64'
+    $url = $urlAmd64
     $checksum = $checksumAmd64
 } else {
     throw "32-bit Windows is not supported. grw requires 64-bit Windows."
 }
-
-$url = "https://github.com/open-cli-collective/google-cli/releases/download/v${version}/grw_v${version}_windows_${arch}.zip"
 
 Install-ChocolateyZipPackage -PackageName $env:ChocolateyPackageName `
     -Url $url `
