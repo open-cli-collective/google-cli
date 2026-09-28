@@ -9,8 +9,10 @@ PackageName: Google Readonly CLI
 PackageUrl: https://github.com/open-cli-collective/google-cli
 License: MIT
 LicenseUrl: https://github.com/open-cli-collective/google-cli/blob/main/LICENSE
-ShortDescription: Read-only Google CLI for Gmail, Calendar, Contacts, and Drive
-Description: A read-only Google CLI for Gmail, Calendar, Contacts, and Drive.
+PrivacyUrl: https://github.com/open-cli-collective/.github/blob/main/privacy-policy.md
+ShortDescription: Unofficial read-only Google CLI for Gmail, Calendar, Contacts, and Drive
+Description: |-
+  Unofficial Google CLI for Gmail, Calendar, Contacts, and Drive. It is an independent open-source project and is not affiliated with, sponsored by, or endorsed by Google.
 Tags: [google, gmail, calendar, contacts, drive, cli, api, readonly, automation]
 ReleaseNotesUrl: https://github.com/open-cli-collective/google-cli/releases
 ManifestType: defaultLocale
