@@ -1,5 +1,7 @@
 # Google CLI
 
+> **Unofficial:** `gro` and `grw` are independent open-source tools and are not affiliated with, sponsored by, or endorsed by Google. See the [Open CLI Collective Privacy Policy](https://github.com/open-cli-collective/.github/blob/main/privacy-policy.md) for their Google account data and local storage practices.
+
 This repository builds two Google command-line tools from one Go module:
 
 - `gro` reads and organizes Gmail, Calendar, Contacts, and Drive data without exposing destructive operations.
