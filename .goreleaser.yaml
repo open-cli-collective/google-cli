@@ -117,6 +117,8 @@ nfpms:
     description: Read-only command-line interface for Google services
     license: MIT
     formats: [deb, rpm, archlinux]
+    # Keep tar entry timestamps aligned with pacman integrity metadata.
+    mtime: "{{ .CommitDate }}"
     bindir: /usr/bin
     contents:
       - src: LICENSE
@@ -130,6 +132,8 @@ nfpms:
     description: Read-write command-line interface for Google services
     license: MIT
     formats: [deb, rpm, archlinux]
+    # Keep tar entry timestamps aligned with pacman integrity metadata.
+    mtime: "{{ .CommitDate }}"
     bindir: /usr/bin
     contents:
       - src: LICENSE
