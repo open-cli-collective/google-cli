@@ -151,8 +151,8 @@ homebrew_casks:
     binaries: [gro]
     hooks:
       post:
-        install: |
-          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gro"]
+        install_steps: |
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/gro"]
     caveats: |
       gro has been installed. Run 'gro init' to configure.
       On macOS, your token is stored securely in the system Keychain.
@@ -167,8 +167,8 @@ homebrew_casks:
     binaries: [grw]
     hooks:
       post:
-        install: |
-          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/grw"]
+        install_steps: |
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/grw"]
     caveats: |
       grw has been installed. Run 'grw init' to configure.
       On macOS, your token is stored securely in the system Keychain.
