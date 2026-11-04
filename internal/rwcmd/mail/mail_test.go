@@ -14,7 +14,7 @@ func TestNewCommandComposition(t *testing.T) {
 	}
 
 	// grw's read-write additions
-	for _, want := range []string{"send", "delete", "restore", "folder", "filter"} {
+	for _, want := range []string{"send", "delete", "restore", "folder", "filter", "vacation"} {
 		if !names[want] {
 			t.Errorf("grw mail is missing the %q command", want)
 		}
@@ -52,6 +52,12 @@ func TestFolderAndFilterSubcommands(t *testing.T) {
 	for _, want := range []string{"list", "create", "rm"} {
 		if !filter[want] {
 			t.Errorf("grw mail filter missing %q", want)
+		}
+	}
+	vacation := find("vacation")
+	for _, want := range []string{"get", "update", "enable", "disable"} {
+		if !vacation[want] {
+			t.Errorf("grw mail vacation missing %q", want)
 		}
 	}
 }

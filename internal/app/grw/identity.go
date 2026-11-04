@@ -22,7 +22,8 @@ import (
 // Scopes is the OAuth scope set grw requests:
 //   - gmail.modify: read + non-destructive organization (label, archive, move,
 //     trash-via-label) and label lifecycle (create/rename/delete folders).
-//   - gmail.settings.basic: create, list, and delete Gmail filters.
+//   - gmail.settings.basic: create, list, and delete Gmail filters; read and change the
+//     vacation responder.
 //   - https://mail.google.com/: permanent deletion (batchDelete), gated behind
 //     `--permanent` and a typed confirmation. This is the broadest Gmail scope;
 //     it is present only because Google offers no narrower delete scope.
@@ -43,7 +44,7 @@ var Scopes = []string{
 // description, shown by the init wizard and the scope-drift re-auth prompt.
 var ScopeDescriptions = map[string]string{
 	gmail.GmailModifyScope:         "Gmail Modify — read messages, plus label, archive, move, trash, and create/rename/delete labels (folders).",
-	gmail.GmailSettingsBasicScope:  "Gmail Settings (basic) — create, list, and delete filters.",
+	gmail.GmailSettingsBasicScope:  "Gmail Settings (basic) — create, list, and delete filters; read and change the vacation responder.",
 	gmail.MailGoogleComScope:       "Gmail Full Access — required for permanent deletion (gated behind --permanent and a typed confirmation).",
 	calendar.CalendarReadonlyScope: "Calendar Read-Only — read calendars and events.",
 	calendar.CalendarEventsScope:   "Calendar Events — create, update, and delete events.",
