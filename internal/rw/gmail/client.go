@@ -138,6 +138,28 @@ func (c *Client) DeleteFilter(ctx context.Context, id string) error {
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// Vacation responder
+// ---------------------------------------------------------------------------
+
+// GetVacation returns the account's vacation responder settings.
+func (c *Client) GetVacation(ctx context.Context) (*gmailv1.VacationSettings, error) {
+	settings, err := c.service.Users.Settings.GetVacation(c.userID).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("getting vacation responder: %w", err)
+	}
+	return settings, nil
+}
+
+// UpdateVacation replaces the account's vacation responder settings.
+func (c *Client) UpdateVacation(ctx context.Context, settings *gmailv1.VacationSettings) (*gmailv1.VacationSettings, error) {
+	updated, err := c.service.Users.Settings.UpdateVacation(c.userID, settings).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("updating vacation responder: %w", err)
+	}
+	return updated, nil
+}
+
 // chunkIDs splits ids into batches of at most size, so batch operations stay
 // within the Gmail API's per-request limits.
 func chunkIDs(ids []string, size int) [][]string {

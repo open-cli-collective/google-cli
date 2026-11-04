@@ -35,7 +35,7 @@ var rootCmd = &cobra.Command{
 It reads and organizes mail like its read-only sibling gro, and adds the
 operations gro deliberately cannot perform: deleting messages (Trash by
 default, permanent behind a guard), managing labels as folders/subfolders, and
-creating Gmail filters. It also reads profile information and creates, updates,
+creating Gmail filters, and changing the vacation responder. It also reads profile information and creates, updates,
 and deletes Google Calendar events, contacts, contact groups, and Drive files.
 
 grw stores its credentials separately from gro (keyring namespace

@@ -28,6 +28,8 @@ type mockWriteClient struct {
 	ListFiltersFunc               func(ctx context.Context) ([]*gmailv1.Filter, error)
 	CreateFilterFunc              func(ctx context.Context, filter *gmailv1.Filter) (*gmailv1.Filter, error)
 	DeleteFilterFunc              func(ctx context.Context, id string) error
+	GetVacationFunc               func(ctx context.Context) (*gmailv1.VacationSettings, error)
+	UpdateVacationFunc            func(ctx context.Context, settings *gmailv1.VacationSettings) (*gmailv1.VacationSettings, error)
 }
 
 var _ WriteClient = (*mockWriteClient)(nil)
@@ -135,4 +137,18 @@ func (m *mockWriteClient) DeleteFilter(ctx context.Context, id string) error {
 		return m.DeleteFilterFunc(ctx, id)
 	}
 	return nil
+}
+
+func (m *mockWriteClient) GetVacation(ctx context.Context) (*gmailv1.VacationSettings, error) {
+	if m.GetVacationFunc != nil {
+		return m.GetVacationFunc(ctx)
+	}
+	return &gmailv1.VacationSettings{}, nil
+}
+
+func (m *mockWriteClient) UpdateVacation(ctx context.Context, settings *gmailv1.VacationSettings) (*gmailv1.VacationSettings, error) {
+	if m.UpdateVacationFunc != nil {
+		return m.UpdateVacationFunc(ctx, settings)
+	}
+	return settings, nil
 }

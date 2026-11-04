@@ -34,6 +34,9 @@ type WriteClient interface {
 	ListFilters(ctx context.Context) ([]*gmailv1.Filter, error)
 	CreateFilter(ctx context.Context, filter *gmailv1.Filter) (*gmailv1.Filter, error)
 	DeleteFilter(ctx context.Context, id string) error
+
+	GetVacation(ctx context.Context) (*gmailv1.VacationSettings, error)
+	UpdateVacation(ctx context.Context, settings *gmailv1.VacationSettings) (*gmailv1.VacationSettings, error)
 }
 
 // ClientFactory constructs grw's write client. Override in tests to inject a
