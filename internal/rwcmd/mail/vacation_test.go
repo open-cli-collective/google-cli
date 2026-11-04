@@ -363,3 +363,27 @@ func TestParseVacationTime(t *testing.T) {
 		})
 	}
 }
+
+func TestVacationUpdate_RejectsReversalAgainstSavedDates(t *testing.T) {
+	saved := time.Date(2026, 3, 5, 0, 0, 0, 0, time.Local).UnixMilli()
+	tests := map[string]struct {
+		current *gmailv1.VacationSettings
+		args    []string
+	}{
+		"start after saved end":  {&gmailv1.VacationSettings{EndTime: saved}, []string{"--start", "2026-03-08"}},
+		"end before saved start": {&gmailv1.VacationSettings{StartTime: saved}, []string{"--end", "2026-03-02"}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var got *gmailv1.VacationSettings
+			withMockClient(vacationMock(tt.current, &got), func() {
+				if _, err := runCmd(newVacationUpdateCommand(), tt.args...); !errors.Is(err, errVacationDateOrder) {
+					t.Errorf("error = %v, want errVacationDateOrder", err)
+				}
+			})
+			if got != nil {
+				t.Errorf("UpdateVacation called with %+v", got)
+			}
+		})
+	}
+}
