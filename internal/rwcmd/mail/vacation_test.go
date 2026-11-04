@@ -85,6 +85,69 @@ func TestVacationUpdate_ChangesOnlyGivenFlags(t *testing.T) {
 	}
 }
 
+func TestVacationUpdate_MapsEachFlagToItsField(t *testing.T) {
+	var got *gmailv1.VacationSettings
+	current := &gmailv1.VacationSettings{ResponseSubject: "Old", StartTime: 7, EndTime: 8}
+	withMockClient(vacationMock(current, &got), func() {
+		testutil.CaptureStdout(t, func() {
+			if _, err := runCmd(newVacationUpdateCommand(), "--subject", "New", "--start", "2026-03-02", "--end", "2026-03-08", "--contacts-only"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	})
+	if got == nil {
+		t.Fatal("UpdateVacation not called")
+	}
+	if got.ResponseSubject != "New" || !got.RestrictToContacts || got.RestrictToDomain {
+		t.Errorf("settings = %+v", got)
+	}
+	if want := time.Date(2026, 3, 2, 0, 0, 0, 0, time.Local).UnixMilli(); got.StartTime != want {
+		t.Errorf("StartTime = %d, want %d", got.StartTime, want)
+	}
+	if want := time.Date(2026, 3, 9, 0, 0, 0, 0, time.Local).UnixMilli(); got.EndTime != want {
+		t.Errorf("EndTime = %d, want %d", got.EndTime, want)
+	}
+}
+
+func TestVacationUpdate_SendsFalseRestrictions(t *testing.T) {
+	var got *gmailv1.VacationSettings
+	current := &gmailv1.VacationSettings{RestrictToContacts: true, RestrictToDomain: true}
+	withMockClient(vacationMock(current, &got), func() {
+		testutil.CaptureStdout(t, func() {
+			if _, err := runCmd(newVacationUpdateCommand(), "--contacts-only=false", "--domain-only=false"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	})
+	wire, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"restrictToContacts":false`, `"restrictToDomain":false`} {
+		if !strings.Contains(string(wire), want) {
+			t.Errorf("request %s missing %s", wire, want)
+		}
+	}
+}
+
+func TestVacationUpdate_DryRunPreviewsResolvedValues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reply.txt")
+	if err := os.WriteFile(path, []byte("from file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := testutil.CaptureStdout(t, func() {
+		if _, err := runCmd(newVacationUpdateCommand(), "--file", path, "--end", "2026-03-08", "--dry-run"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	end := time.Date(2026, 3, 9, 0, 0, 0, 0, time.Local).Format(time.RFC3339)
+	for _, want := range []string{"body: from file", "ends before: " + end} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output %q missing %q", out, want)
+		}
+	}
+}
+
 func TestVacationUpdate_KeepsDisabledAndClearsDate(t *testing.T) {
 	var got *gmailv1.VacationSettings
 	withMockClient(vacationMock(&gmailv1.VacationSettings{EndTime: 42}, &got), func() {
@@ -145,12 +208,13 @@ func TestVacationUpdate_RejectsInvalidInput(t *testing.T) {
 		args []string
 		want string
 	}{
-		"no settings":    {nil, "at least one setting"},
-		"both bodies":    {[]string{"--body", "a", "--file", file}, "mutually exclusive"},
-		"missing file":   {[]string{"--file", file + ".none"}, "reading --file"},
-		"bad start":      {[]string{"--start", "March 2"}, "invalid --start"},
-		"bad end":        {[]string{"--end", "March 2"}, "invalid --end"},
-		"reversed dates": {[]string{"--start", "2026-03-08", "--end", "2026-03-02"}, "must be before"},
+		"no settings":               {nil, "at least one setting"},
+		"both bodies":               {[]string{"--body", "a", "--file", file}, "mutually exclusive"},
+		"missing file":              {[]string{"--file", file + ".none"}, "reading --file"},
+		"bad start":                 {[]string{"--start", "March 2"}, "invalid --start"},
+		"bad end":                   {[]string{"--end", "March 2"}, "invalid --end"},
+		"reversed dates":            {[]string{"--start", "2026-03-08", "--end", "2026-03-02"}, "must be before"},
+		"reversed dates in dry-run": {[]string{"--start", "2026-03-08", "--end", "2026-03-02", "--dry-run"}, "must be before"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

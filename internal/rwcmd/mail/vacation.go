@@ -14,6 +14,8 @@ import (
 	"github.com/open-cli-collective/google-cli/internal/sanitize"
 )
 
+var errVacationDateOrder = errors.New("the start time must be before the end time")
+
 func newVacationCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "vacation",
@@ -84,13 +86,20 @@ empty value clears a date. Setting --body or --file replaces any existing body.`
 			if err != nil {
 				return fmt.Errorf("invalid --end: %w", err)
 			}
+			if startMillis != 0 && endMillis != 0 && startMillis >= endMillis {
+				return errVacationDateOrder
+			}
 			if dryRun {
 				fmt.Println("[dry-run] Would update vacation responder:")
 				flags.Visit(func(f *pflag.Flag) {
 					switch f.Name {
 					case "dry-run":
-					case "file":
-						fmt.Printf("body:\n%s\n", sanitize.Output(body))
+					case "body", "file":
+						fmt.Printf("body: %s\n", sanitize.Output(body))
+					case "start":
+						fmt.Printf("starts: %s\n", formatVacationTime(startMillis))
+					case "end":
+						fmt.Printf("ends before: %s\n", formatVacationTime(endMillis))
 					default:
 						fmt.Printf("%s: %s\n", sanitize.Output(f.Name), sanitize.Output(f.Value.String()))
 					}
@@ -128,7 +137,7 @@ empty value clears a date. Setting --body or --file replaces any existing body.`
 				settings.RestrictToDomain = domainOnly
 			}
 			if settings.StartTime != 0 && settings.EndTime != 0 && settings.StartTime >= settings.EndTime {
-				return errors.New("the start time must be before the end time")
+				return errVacationDateOrder
 			}
 			return writeVacation(ctx, client, settings, "Vacation responder updated:")
 		},
@@ -179,8 +188,8 @@ func onOff(enabled bool) string {
 	return "off"
 }
 
-// writeVacation sends the full settings and prints the result. The update
-// replaces every field, and the API client omits false values unless forced.
+// writeVacation sends the full settings and prints the result. Gmail clears any
+// text or time field left out of the update, so empty values need no forcing.
 func writeVacation(ctx context.Context, client WriteClient, settings *gmailv1.VacationSettings, heading string) error {
 	settings.ForceSendFields = []string{"EnableAutoReply", "RestrictToContacts", "RestrictToDomain"}
 	updated, err := client.UpdateVacation(ctx, settings)
