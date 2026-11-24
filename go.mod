@@ -1,8 +1,8 @@
 module github.com/open-cli-collective/google-cli
 
-go 1.26.4
+go 1.27.0
 
-toolchain go1.26.10
+toolchain go1.27.4
 
 require (
 	github.com/atotto/clipboard v0.1.4
